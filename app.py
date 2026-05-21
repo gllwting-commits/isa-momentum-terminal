@@ -25,6 +25,9 @@ ETF_NAMES = {
     'FLXK': 'Franklin FTSE Korea',
 }
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
+# Minimum history fed to fetch_data() so EWM-based RSI stabilises identically
+# in both Signal Summary and Charts — must be >= max(TIMEFRAMES.values()).
+_INDICATOR_DAYS = 365
 ISA_ALLOWANCE = 20_000
 MONTHLY_INVEST = 1_667
 ANNUAL_RETURN  = 0.12
@@ -143,7 +146,7 @@ def fetch_data(ticker: str, days: int) -> pd.DataFrame:
 
 
 def fetch_latest(ticker: str) -> dict | None:
-    df = fetch_data(ticker, 5)
+    df = fetch_data(ticker, _INDICATOR_DAYS)
     if df.empty:
         return None
     close  = float(df['Close'].iloc[-1])
@@ -698,7 +701,7 @@ def style_tf_buttons(selected):
 def update_chart(etf, tf, _):
     ticker = TICKERS[etf]
     days   = TIMEFRAMES[tf]
-    df     = fetch_data(ticker, days)
+    df     = fetch_data(ticker, max(days, _INDICATOR_DAYS))
     now    = datetime.now().strftime('%H:%M:%S')
 
     def empty_fig(msg='No data available'):
