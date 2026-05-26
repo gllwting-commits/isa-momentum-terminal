@@ -222,32 +222,32 @@ def get_macro_status(key: str, data: dict) -> tuple:
     if key == 'TNX':
         if close >= 5.0:
             return ('ALERT',
-                    f'{close:.3f}%  ≥ 5.0% threshold',
+                    f'{close:.3f}% — ALERT zone (5.00%+)',
                     'Redirect contributions — SGLS gets 40% of monthly')
         if close >= 4.8:
             return ('WARNING',
-                    f'{close:.3f}%  ≥ 4.8% threshold',
+                    f'{close:.3f}% — WARNING zone (4.80–4.99%)',
                     'Pause SEMG/WTAI new buys — delay IWMO entry')
         if close >= 4.5:
             return ('WATCH',
-                    f'{close:.3f}%  ≥ 4.5% threshold',
+                    f'{close:.3f}% — WATCH zone (4.50–4.79%)',
                     '')
-        return ('CLEAR', f'{close:.3f}%  below 4.5%', '')
+        return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.50%)', '')
 
     if key == 'TYX':
         if close >= 5.3:
             return ('ALERT',
-                    f'{close:.3f}%  ≥ 5.3% threshold',
+                    f'{close:.3f}% — ALERT zone (5.30%+)',
                     'Structural regime shift — multi-year re-rating risk')
         if close >= 5.0:
             return ('WARNING',
-                    f'{close:.3f}%  ≥ 5.0% threshold',
+                    f'{close:.3f}% — WARNING zone (5.00–5.29%)',
                     '')
         if close >= 4.8:
             return ('WATCH',
-                    f'{close:.3f}%  ≥ 4.8% threshold',
+                    f'{close:.3f}% — WATCH zone (4.80–4.99%)',
                     '')
-        return ('CLEAR', f'{close:.3f}%  below 4.8%', '')
+        return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.80%)', '')
 
     if key == 'SOX':
         ma200 = data.get('ma200')
@@ -255,21 +255,22 @@ def get_macro_status(key: str, data: dict) -> tuple:
             return 'UNKNOWN', 'Insufficient history for 200DMA', ''
         ma200_prev = data.get('ma200_prev')
         pct = (close - ma200) / ma200 * 100
+        pct_str = f'+{pct:.1f}%' if pct >= 0 else f'{pct:.1f}%'
         ma_declining = (ma200_prev is not None) and (ma200 < ma200_prev)
         if close < ma200 and ma_declining:
             return ('ALERT',
-                    f'{close:,.1f}  —  {pct:.1f}% vs 200DMA ({ma200:,.1f}), MA declining',
+                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — ALERT zone (sustained break, MA declining)',
                     'Pause SEMG additions — redirect to VDPG/SGLS')
         if close < ma200:
             return ('WARNING',
-                    f'{close:,.1f}  —  {pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WARNING zone (below 200DMA)',
                     'Pause SEMG additions — redirect to VDPG/SGLS')
         if pct <= 3.0:
             return ('WATCH',
-                    f'{close:,.1f}  —  +{pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WATCH zone (within 3% of 200DMA)',
                     '')
         return ('CLEAR',
-                f'{close:,.1f}  —  +{pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — CLEAR zone (>3% above 200DMA)',
                 '')
 
     return 'UNKNOWN', '', ''
@@ -283,103 +284,82 @@ _MACRO_META = {
 
 
 def _macro_threshold_reference() -> html.Div:
-    TH = {**TH_STYLE, 'textAlign': 'center', 'whiteSpace': 'nowrap'}
-    TD = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top'}
+    TH_C = {**TH_STYLE, 'textAlign': 'left', 'whiteSpace': 'nowrap', 'paddingLeft': '14px'}
+    TD_C = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top', 'paddingLeft': '14px'}
 
-    def level_cell(label, color):
-        return html.Td(
+    def tier_col(label, color, range_text, action=None):
+        """One column cell: coloured badge + range + optional action."""
+        children = [
             html.Span(label, style={
                 'background': color + '22', 'color': color,
                 'border': f'1px solid {color}',
-                'padding': '2px 10px', 'borderRadius': '20px',
-                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.5px',
-                'whiteSpace': 'nowrap',
+                'padding': '2px 9px', 'borderRadius': '20px',
+                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.4px',
+                'display': 'inline-block', 'marginBottom': '5px',
             }),
-            style={**TD, 'textAlign': 'center'},
-        )
+            html.Div(range_text, style={
+                'color': color, 'fontSize': '12px', 'fontWeight': '600',
+                'marginBottom': '4px' if action else '0',
+            }),
+        ]
+        if action:
+            children.append(html.Div(action, style={
+                'color': MUTED, 'fontSize': '11px', 'lineHeight': '1.5',
+                'borderLeft': f'2px solid {color}', 'paddingLeft': '6px',
+                'marginTop': '2px',
+            }))
+        return html.Td(children, style={**TD_C, 'minWidth': '160px'})
 
     rows = [
         html.Tr([
             html.Td([
                 html.Div('TNX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
                 html.Div('10Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD),
-            level_cell('CLEAR', GREEN),
-            html.Td('below 4.5%', style={**TD, 'color': GREEN}),
-            level_cell('WATCH', YELLOW),
-            html.Td('4.5 – 4.79%', style={**TD, 'color': YELLOW}),
-            level_cell('WARNING', ORANGE),
-            html.Td('4.8 – 4.99%', style={**TD, 'color': ORANGE}),
-            level_cell('ALERT', RED),
-            html.Td('5.0%+', style={**TD, 'color': RED}),
-            html.Td([
-                html.Div([
-                    html.Span('WARNING: ', style={'color': ORANGE, 'fontWeight': '700'}),
-                    html.Span('Pause SEMG/WTAI new buys, delay IWMO entry',
-                              style={'color': MUTED}),
-                ], style={'marginBottom': '4px'}),
-                html.Div([
-                    html.Span('ALERT: ', style={'color': RED, 'fontWeight': '700'}),
-                    html.Span('Redirect contributions — SGLS gets 40% of monthly',
-                              style={'color': MUTED}),
-                ]),
-            ], style={**TD, 'lineHeight': '1.6'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  'below 4.50%'),
+            tier_col('WATCH',   YELLOW, '4.50 – 4.79%'),
+            tier_col('WARNING', ORANGE, '4.80 – 4.99%',
+                     'Pause SEMG/WTAI new buys\nDelay IWMO entry'),
+            tier_col('ALERT',   RED,    '5.00%+',
+                     'Redirect contributions\nSGLS gets 40% of monthly'),
         ], style={'borderBottom': f'1px solid {BORDER}'}),
 
         html.Tr([
             html.Td([
                 html.Div('TYX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
                 html.Div('30Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD),
-            level_cell('CLEAR', GREEN),
-            html.Td('below 4.8%', style={**TD, 'color': GREEN}),
-            level_cell('WATCH', YELLOW),
-            html.Td('4.8 – 4.99%', style={**TD, 'color': YELLOW}),
-            level_cell('WARNING', ORANGE),
-            html.Td('5.0 – 5.29%', style={**TD, 'color': ORANGE}),
-            level_cell('ALERT', RED),
-            html.Td('5.3%+', style={**TD, 'color': RED}),
-            html.Td([
-                html.Div([
-                    html.Span('ALERT: ', style={'color': RED, 'fontWeight': '700'}),
-                    html.Span('Structural regime shift — multi-year re-rating risk',
-                              style={'color': MUTED}),
-                ]),
-            ], style={**TD, 'lineHeight': '1.6'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  'below 4.80%'),
+            tier_col('WATCH',   YELLOW, '4.80 – 4.99%'),
+            tier_col('WARNING', ORANGE, '5.00 – 5.29%'),
+            tier_col('ALERT',   RED,    '5.30%+',
+                     'Structural regime shift\nMulti-year re-rating risk'),
         ], style={'borderBottom': f'1px solid {BORDER}'}),
 
         html.Tr([
             html.Td([
                 html.Div('SOX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
                 html.Div('Semiconductor Index', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD),
-            level_cell('CLEAR', GREEN),
-            html.Td('>3% above 200DMA', style={**TD, 'color': GREEN}),
-            level_cell('WATCH', YELLOW),
-            html.Td('Within 3% of 200DMA', style={**TD, 'color': YELLOW}),
-            level_cell('WARNING', ORANGE),
-            html.Td('First close below 200DMA', style={**TD, 'color': ORANGE}),
-            level_cell('ALERT', RED),
-            html.Td('Sustained break + MA turning down', style={**TD, 'color': RED}),
-            html.Td([
-                html.Div([
-                    html.Span('WARNING: ', style={'color': ORANGE, 'fontWeight': '700'}),
-                    html.Span('Pause SEMG additions — redirect to VDPG/SGLS',
-                              style={'color': MUTED}),
-                ]),
-            ], style={**TD, 'lineHeight': '1.6'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  '>3% above 200DMA'),
+            tier_col('WATCH',   YELLOW, 'Within 3% of 200DMA'),
+            tier_col('WARNING', ORANGE, 'First close below 200DMA',
+                     'Pause SEMG additions\nRedirect to VDPG/SGLS'),
+            tier_col('ALERT',   RED,    'Sustained break below 200DMA\n+ MA turning down',
+                     'Pause SEMG additions\nRedirect to VDPG/SGLS'),
         ]),
     ]
 
-    headers = ['Indicator', 'Level', 'Trigger', 'Level', 'Trigger',
-               'Level', 'Trigger', 'Level', 'Trigger', 'Action Guidance']
-    thead = html.Thead(html.Tr([html.Th(h, style=TH) for h in headers]))
+    thead = html.Thead(html.Tr([
+        html.Th(h, style=TH_C)
+        for h in ['Indicator', 'CLEAR', 'WATCH', 'WARNING', 'ALERT']
+    ]))
 
     return card([
         html.H3('Macro Alert Thresholds & Rationale', style={
             'color': TEXT, 'margin': '0 0 4px 0', 'fontSize': '14px', 'fontWeight': '700',
         }),
-        html.P('Static reference — thresholds applied to live macro panel above',
+        html.P('Static reference — thresholds applied to the live macro panel above',
                style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
         html.Div(
             html.Table(
