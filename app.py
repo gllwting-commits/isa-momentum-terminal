@@ -43,6 +43,23 @@ ACCENT = '#58a6ff'
 GREEN  = '#3fb950'
 RED    = '#f85149'
 YELLOW = '#d29922'
+ORANGE = '#f97316'
+
+MACRO_STATUS_COLOR = {
+    'CLEAR':   GREEN,
+    'WATCH':   YELLOW,
+    'WARNING': ORANGE,
+    'ALERT':   RED,
+}
+MACRO_STATUS_BG = {
+    'CLEAR':   '#0d1a0d',
+    'WATCH':   '#1a1600',
+    'WARNING': '#1a0e00',
+    'ALERT':   '#1a0d0d',
+}
+MACRO_STATUS_TEXT_COLOR = {
+    'CLEAR': '#000', 'WATCH': '#000', 'WARNING': '#000', 'ALERT': '#fff',
+}
 
 SIG_COLOR = {
     'BUY':  GREEN,
@@ -168,6 +185,165 @@ def fetch_latest(ticker: str) -> dict | None:
         'pct50': (close - sma50) / sma50 * 100,
         'rec': rec, 'reason': reason,
     }
+
+
+def fetch_macro_indicators() -> dict:
+    result = {}
+    for key, ticker in [('TNX', '^TNX'), ('TYX', '^TYX'), ('SOX', '^SOX')]:
+        try:
+            start = datetime.today() - timedelta(days=365)
+            df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+            if df.empty:
+                result[key] = None
+                continue
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
+            df = df[['Close']].dropna()
+            close = float(df['Close'].iloc[-1])
+            ma200 = float(df['Close'].rolling(200).mean().dropna().iloc[-1]) if len(df) >= 200 else None
+            ma200_prev = (float(df['Close'].rolling(200).mean().dropna().iloc[-11])
+                          if len(df) >= 210 else None)
+            result[key] = {
+                'close': close,
+                'ma200': ma200,
+                'ma200_prev': ma200_prev,
+                'as_of': datetime.now().strftime('%H:%M:%S'),
+            }
+        except Exception:
+            result[key] = None
+    return result
+
+
+def get_macro_status(key: str, data: dict) -> tuple:
+    if data is None:
+        return 'UNKNOWN', 'No data available', ''
+    close = data['close']
+
+    if key == 'TNX':
+        if close >= 5.0:
+            return ('ALERT',
+                    f'{close:.3f}%  ≥ 5.0% threshold',
+                    'Redirect contributions — SGLS gets 40% of monthly')
+        if close >= 4.8:
+            return ('WARNING',
+                    f'{close:.3f}%  ≥ 4.8% threshold',
+                    'Pause SEMG/WTAI new buys — delay IWMO entry')
+        if close >= 4.5:
+            return ('WATCH',
+                    f'{close:.3f}%  ≥ 4.5% threshold',
+                    '')
+        return ('CLEAR', f'{close:.3f}%  below 4.5%', '')
+
+    if key == 'TYX':
+        if close >= 5.3:
+            return ('ALERT',
+                    f'{close:.3f}%  ≥ 5.3% threshold',
+                    'Structural regime shift — multi-year re-rating risk')
+        if close >= 5.0:
+            return ('WARNING',
+                    f'{close:.3f}%  ≥ 5.0% threshold',
+                    '')
+        if close >= 4.8:
+            return ('WATCH',
+                    f'{close:.3f}%  ≥ 4.8% threshold',
+                    '')
+        return ('CLEAR', f'{close:.3f}%  below 4.8%', '')
+
+    if key == 'SOX':
+        ma200 = data.get('ma200')
+        if ma200 is None:
+            return 'UNKNOWN', 'Insufficient history for 200DMA', ''
+        ma200_prev = data.get('ma200_prev')
+        pct = (close - ma200) / ma200 * 100
+        ma_declining = (ma200_prev is not None) and (ma200 < ma200_prev)
+        if close < ma200 and ma_declining:
+            return ('ALERT',
+                    f'{close:,.1f}  —  {pct:.1f}% vs 200DMA ({ma200:,.1f}), MA declining',
+                    'Pause SEMG additions — redirect to VDPG/SGLS')
+        if close < ma200:
+            return ('WARNING',
+                    f'{close:,.1f}  —  {pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                    'Pause SEMG additions — redirect to VDPG/SGLS')
+        if pct <= 3.0:
+            return ('WATCH',
+                    f'{close:,.1f}  —  +{pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                    '')
+        return ('CLEAR',
+                f'{close:,.1f}  —  +{pct:.1f}% vs 200DMA ({ma200:,.1f})',
+                '')
+
+    return 'UNKNOWN', '', ''
+
+
+_MACRO_META = {
+    'TNX': ('TNX', '10Y Treasury Yield'),
+    'TYX': ('TYX', '30Y Treasury Yield'),
+    'SOX': ('SOX', 'Philadelphia Semiconductor Index'),
+}
+
+
+def build_macro_panel(macro_data: dict) -> html.Div:
+    cards = []
+    for key in ['TNX', 'TYX', 'SOX']:
+        data = macro_data.get(key)
+        status, threshold_label, action = get_macro_status(key, data)
+        color     = MACRO_STATUS_COLOR.get(status, MUTED)
+        bg        = MACRO_STATUS_BG.get(status, CARD)
+        txt_color = MACRO_STATUS_TEXT_COLOR.get(status, '#fff')
+        ticker_label, full_name = _MACRO_META[key]
+        as_of = data.get('as_of', '') if data else ''
+
+        card_children = [
+            html.Div([
+                html.Span(status, style={
+                    'background': color, 'color': txt_color,
+                    'padding': '2px 10px', 'borderRadius': '20px',
+                    'fontWeight': '700', 'fontSize': '11px',
+                    'marginRight': '10px', 'letterSpacing': '0.5px',
+                }),
+                html.Span(ticker_label, style={
+                    'color': TEXT, 'fontWeight': '700', 'fontSize': '15px',
+                    'marginRight': '8px',
+                }),
+                html.Span(full_name, style={'color': MUTED, 'fontSize': '11px'}),
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
+            html.P(threshold_label, style={
+                'color': TEXT, 'fontSize': '13px', 'margin': '0 0 4px 0',
+                'fontFamily': 'monospace', 'fontWeight': '600',
+            }),
+        ]
+        if action:
+            card_children.append(html.P(f'Action: {action}', style={
+                'color': color, 'fontSize': '12px', 'margin': '4px 0 0 0',
+                'fontStyle': 'italic',
+            }))
+        if as_of:
+            card_children.append(html.Span(f'as of {as_of}', style={
+                'color': MUTED, 'fontSize': '10px', 'display': 'block', 'marginTop': '6px',
+            }))
+
+        cards.append(html.Div(card_children, style={
+            'background': bg,
+            'border': f'1px solid {color}',
+            'borderLeft': f'4px solid {color}',
+            'borderRadius': '8px',
+            'padding': '12px 16px',
+            'flex': '1',
+            'minWidth': '260px',
+            'boxShadow': f'0 0 14px {color}28',
+        }))
+
+    return html.Div([
+        html.Div([
+            html.Span('MACRO CONDITIONS', style={
+                'color': MUTED, 'fontWeight': '700', 'fontSize': '11px',
+                'letterSpacing': '1px',
+            }),
+            html.Span('  ·  Rates & Semiconductor Health  ·  refreshes every 60s',
+                      style={'color': MUTED, 'fontSize': '11px'}),
+        ], style={'marginBottom': '10px'}),
+        html.Div(cards, style={'display': 'flex', 'gap': '12px', 'flexWrap': 'wrap'}),
+    ], style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '12px 16px 4px'})
 
 
 def retirement_projection():
@@ -444,6 +620,9 @@ app.layout = html.Div([
         'padding': '14px 20px', 'background': CARD,
         'borderBottom': f'1px solid {BORDER}',
     }),
+
+    # ── Macro Alert Panel ─────────────────────────────────────────────────────
+    html.Div(id='macro-alert-panel'),
 
     # ── Alert Banners ─────────────────────────────────────────────────────────
     html.Div(id='buy-alert-banner'),
@@ -839,6 +1018,15 @@ def update_isa(invested):
         legend=dict(orientation='h', y=-0.08, x=0.25, font=dict(size=11)),
     )
     return stats, fig
+
+
+# ── Macro panel callback ─────────────────────────────────────────────────────
+@app.callback(
+    Output('macro-alert-panel', 'children'),
+    Input('refresh', 'n_intervals'),
+)
+def update_macro_panel(_):
+    return build_macro_panel(fetch_macro_indicators())
 
 
 # ── Alert: transition detector (BUY + SELL) ───────────────────────────────────
