@@ -12,28 +12,28 @@ import yfinance as yf
 from dash import Input, Output, State, dcc, html
 from plotly.subplots import make_subplots
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 ETFS = ['IWMO', 'JEDG', 'SEMG', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
     'IWMO': 'iShares MSCI World Momentum',
-    'JEDG': 'JPM Global Equity Multi-Factor',
+    'JEDG': 'VanEck Space Innovators',
     'SEMG': 'iShares MSCI EM IMI ESG Screened',
     'VDPG': 'Vanguard FTSE Dev World',
     'WTAI': 'WisdomTree AI',
-    'SGLS': 'iShares Global Clean Energy',
+    'SGLS': 'Invesco Physical Gold GBP Hedged',
     'FLXK': 'Franklin FTSE Korea',
 }
+VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'FLXK']
+WTAI_VOL_PROXY = 'AIAG.L'
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
-# Minimum history fed to fetch_data() so EWM-based RSI stabilises identically
-# in both Signal Summary and Charts — must be >= max(TIMEFRAMES.values()).
 _INDICATOR_DAYS = 365
-ISA_ALLOWANCE = 20_000
+ISA_ALLOWANCE  = 20_000
 MONTHLY_INVEST = 1_667
 ANNUAL_RETURN  = 0.12
 PROJ_YEARS     = 20
 
-# ── Palette ──────────────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────
 BG     = '#0d1117'
 CARD   = '#161b22'
 BORDER = '#30363d'
@@ -45,57 +45,52 @@ RED    = '#f85149'
 YELLOW = '#d29922'
 ORANGE = '#f97316'
 
-MACRO_STATUS_COLOR = {
-    'CLEAR':   GREEN,
-    'WATCH':   YELLOW,
-    'WARNING': ORANGE,
-    'ALERT':   RED,
-}
-MACRO_STATUS_BG = {
-    'CLEAR':   '#0d1a0d',
-    'WATCH':   '#1a1600',
-    'WARNING': '#1a0e00',
-    'ALERT':   '#1a0d0d',
-}
-MACRO_STATUS_TEXT_COLOR = {
-    'CLEAR': '#000', 'WATCH': '#000', 'WARNING': '#000', 'ALERT': '#fff',
-}
+MACRO_STATUS_COLOR = {'CLEAR': GREEN, 'WATCH': YELLOW, 'WARNING': ORANGE, 'ALERT': RED}
+MACRO_STATUS_BG    = {'CLEAR': '#0d1a0d', 'WATCH': '#1a1600', 'WARNING': '#1a0e00', 'ALERT': '#1a0d0d'}
+MACRO_STATUS_TEXT_COLOR = {'CLEAR': '#000', 'WATCH': '#000', 'WARNING': '#000', 'ALERT': '#fff'}
 
-SIG_COLOR = {
-    'BUY':  GREEN,
-    'HOLD': YELLOW,
-    'SELL': RED,
-}
-SIG_DESC = {
+SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
+SIG_DESC   = {
     'BUY':  'Oversold conditions detected — favourable entry point',
     'HOLD': 'No clear edge — hold existing positions or watch',
     'SELL': 'Overbought / extended — avoid chasing, wait for pullback',
 }
-REC_COLOR = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
+REC_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
+ROW_TINT   = {'BUY': 'rgba(63,185,80,0.06)', 'HOLD': 'transparent', 'SELL': 'rgba(248,81,73,0.06)'}
+CONVICTION_COLOR = {'HIGH': GREEN, 'MED': YELLOW, 'LOW': MUTED}
 
 TAB_STYLE = {
-    'background': BG,
-    'color': MUTED,
-    'border': 'none',
-    'borderBottom': f'2px solid transparent',
-    'padding': '10px 22px',
-    'fontFamily': 'monospace',
-    'fontSize': '13px',
-    'fontWeight': '600',
-    'cursor': 'pointer',
+    'background': BG, 'color': MUTED, 'border': 'none',
+    'borderBottom': '2px solid transparent', 'padding': '10px 22px',
+    'fontFamily': 'monospace', 'fontSize': '13px', 'fontWeight': '600', 'cursor': 'pointer',
 }
-TAB_SELECTED = {
-    **TAB_STYLE,
-    'color': TEXT,
-    'borderBottom': f'2px solid {ACCENT}',
-    'background': CARD,
-}
+TAB_SELECTED = {**TAB_STYLE, 'color': TEXT, 'borderBottom': f'2px solid {ACCENT}', 'background': CARD}
+
+# ── Signal history (in-process; resets on server restart) ─────────────────────
+_signal_history: dict = {}
+
+
+def _update_signal_history(etf: str, new_signal: str) -> str:
+    now  = datetime.now()
+    prev = _signal_history.get(etf)
+    if prev is None or prev['signal'] != new_signal:
+        _signal_history[etf] = {'signal': new_signal, 'changed_at': now}
+        return 'Just now'
+    elapsed = now - prev['changed_at']
+    if elapsed.days >= 1:
+        return f'{elapsed.days}d ago'
+    hours = elapsed.seconds // 3600
+    if hours >= 1:
+        return f'{hours}h ago'
+    mins = elapsed.seconds // 60
+    return f'{max(mins, 1)}m ago'
+
 
 # ── Calculations ──────────────────────────────────────────────────────────────
 def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-    delta = close.diff()
-    gain  = delta.clip(lower=0)
-    loss  = -delta.clip(upper=0)
+    delta    = close.diff()
+    gain     = delta.clip(lower=0)
+    loss     = -delta.clip(upper=0)
     avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
     avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
@@ -112,14 +107,30 @@ def get_signal(rsi: float, close: float, sma20: float, sma50: float) -> str:
     return 'HOLD'
 
 
+def get_conviction(signal: str, rsi: float, pct20: float, pct50: float) -> str:
+    if signal == 'BUY':
+        if rsi < 30 and pct20 < -2:
+            return 'HIGH'
+        if rsi < 38 or pct50 < -3:
+            return 'MED'
+        return 'LOW'
+    if signal == 'SELL':
+        if rsi > 70:
+            return 'HIGH'
+        if pct50 > 12 or rsi > 65:
+            return 'MED'
+        return 'LOW'
+    if 43 <= rsi <= 58:
+        return 'MED'
+    return 'LOW'
+
+
 def get_recommendation(rsi: float, close: float, sma20: float, sma50: float):
-    """Same logic as get_signal(); adds a plain-English reason sentence."""
     rec   = get_signal(rsi, close, sma20, sma50)
     pct20 = (close - sma20) / sma20 * 100
     pct50 = (close - sma50) / sma50 * 100
     vs20  = 'above' if close >= sma20 else 'below'
     vs50  = 'above' if close >= sma50 else 'below'
-
     if rec == 'BUY':
         if rsi < 30:
             reason = (f'RSI deeply oversold at {rsi:.0f} and price {abs(pct20):.1f}% '
@@ -134,7 +145,7 @@ def get_recommendation(rsi: float, close: float, sma20: float, sma50: float):
         else:
             reason = (f'Price extended {pct50:.1f}% above SMA50 — momentum overstretched '
                       f'and risk/reward has deteriorated.')
-    else:  # HOLD
+    else:
         if close > sma20 and close > sma50:
             reason = (f'Uptrend intact, RSI {rsi:.0f} — price {vs20} SMA20 and {vs50} '
                       f'SMA50 with no overbought pressure, hold and let it run.')
@@ -144,7 +155,6 @@ def get_recommendation(rsi: float, close: float, sma20: float, sma50: float):
         else:
             reason = (f'Mixed signals, RSI {rsi:.0f} — price {vs20} SMA20 and {vs50} '
                       f'SMA50. No clear edge, watch for a directional move.')
-
     return rec, reason
 
 
@@ -162,28 +172,60 @@ def fetch_data(ticker: str, days: int) -> pd.DataFrame:
     return df
 
 
-def fetch_latest(ticker: str) -> dict | None:
+def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
+    if df.empty or 'Volume' not in df.columns or len(df) < 5:
+        return None
+    today_vol = float(df['Volume'].iloc[-1])
+    window    = df['Volume'].iloc[max(-21, -len(df)):-1]
+    avg_vol   = float(window.mean()) if len(window) > 0 else 0.0
+    return today_vol / avg_vol if avg_vol > 0 else None
+
+
+def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     df = fetch_data(ticker, _INDICATOR_DAYS)
     if df.empty:
         return None
-    close  = float(df['Close'].iloc[-1])
-    prev   = float(df['Close'].iloc[-2]) if len(df) > 1 else close
-    rsi_s  = df['RSI'].dropna()
-    s20_s  = df['SMA20'].dropna()
-    s50_s  = df['SMA50'].dropna()
-    rsi    = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
-    sma20  = float(s20_s.iloc[-1]) if not s20_s.empty else close
-    sma50  = float(s50_s.iloc[-1]) if not s50_s.empty else close
-    chg_pct = (close - prev) / prev * 100 if prev else 0
+    close = float(df['Close'].iloc[-1])
+    prev  = float(df['Close'].iloc[-2]) if len(df) > 1 else close
+
+    # Weekly change — first close in current ISO week
+    last_date  = df.index[-1]
+    week_start = last_date - pd.Timedelta(days=last_date.dayofweek)
+    week_df    = df[df.index >= week_start]
+    if len(week_df) >= 2:
+        wk_base      = float(week_df['Close'].iloc[0])
+        week_chg_pct = (close - wk_base) / wk_base * 100
+    else:
+        week_chg_pct = 0.0
+
+    rsi_s = df['RSI'].dropna()
+    s20_s = df['SMA20'].dropna()
+    s50_s = df['SMA50'].dropna()
+    rsi   = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
+    sma20 = float(s20_s.iloc[-1]) if not s20_s.empty else close
+    sma50 = float(s50_s.iloc[-1]) if not s50_s.empty else close
+    chg_pct = (close - prev) / prev * 100 if prev else 0.0
+    pct20   = (close - sma20) / sma20 * 100
+    pct50   = (close - sma50) / sma50 * 100
     rec, reason = get_recommendation(rsi, close, sma20, sma50)
+    conviction  = get_conviction(rec, rsi, pct20, pct50)
+
+    vol_ratio = _compute_vol_ratio(df)
+    proxy_label = None
+    if vol_ratio is None and vol_proxy:
+        proxy_df  = fetch_data(vol_proxy, 30)
+        vol_ratio = _compute_vol_ratio(proxy_df)
+        if vol_ratio is not None:
+            proxy_label = vol_proxy
+
     return {
-        'close': close, 'chg_pct': chg_pct,
+        'close': close, 'chg_pct': chg_pct, 'week_chg_pct': week_chg_pct,
+        'vol_ratio': vol_ratio, 'vol_proxy': proxy_label,
         'rsi': rsi, 'sma20': sma20, 'sma50': sma50,
         'vs20': 'Above' if close >= sma20 else 'Below',
         'vs50': 'Above' if close >= sma50 else 'Below',
-        'pct20': (close - sma20) / sma20 * 100,
-        'pct50': (close - sma50) / sma50 * 100,
-        'rec': rec, 'reason': reason,
+        'pct20': pct20, 'pct50': pct50,
+        'rec': rec, 'reason': reason, 'conviction': conviction,
     }
 
 
@@ -199,16 +241,12 @@ def fetch_macro_indicators() -> dict:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
             df = df[['Close']].dropna()
-            close = float(df['Close'].iloc[-1])
-            ma200 = float(df['Close'].rolling(200).mean().dropna().iloc[-1]) if len(df) >= 200 else None
+            close      = float(df['Close'].iloc[-1])
+            ma200      = float(df['Close'].rolling(200).mean().dropna().iloc[-1]) if len(df) >= 200 else None
             ma200_prev = (float(df['Close'].rolling(200).mean().dropna().iloc[-11])
                           if len(df) >= 210 else None)
-            result[key] = {
-                'close': close,
-                'ma200': ma200,
-                'ma200_prev': ma200_prev,
-                'as_of': datetime.now().strftime('%H:%M:%S'),
-            }
+            result[key] = {'close': close, 'ma200': ma200, 'ma200_prev': ma200_prev,
+                           'as_of': datetime.now().strftime('%H:%M:%S')}
         except Exception:
             result[key] = None
     return result
@@ -218,44 +256,32 @@ def get_macro_status(key: str, data: dict) -> tuple:
     if data is None:
         return 'UNKNOWN', 'No data available', ''
     close = data['close']
-
     if key == 'TNX':
         if close >= 5.0:
-            return ('ALERT',
-                    f'{close:.3f}% — ALERT zone (5.00%+)',
+            return ('ALERT', f'{close:.3f}% — ALERT zone (5.00%+)',
                     'Redirect contributions — SGLS gets 40% of monthly')
         if close >= 4.8:
-            return ('WARNING',
-                    f'{close:.3f}% — WARNING zone (4.80–4.99%)',
+            return ('WARNING', f'{close:.3f}% — WARNING zone (4.80–4.99%)',
                     'Pause SEMG/WTAI new buys — delay IWMO entry')
         if close >= 4.5:
-            return ('WATCH',
-                    f'{close:.3f}% — WATCH zone (4.50–4.79%)',
-                    '')
+            return ('WATCH', f'{close:.3f}% — WATCH zone (4.50–4.79%)', '')
         return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.50%)', '')
-
     if key == 'TYX':
         if close >= 5.3:
-            return ('ALERT',
-                    f'{close:.3f}% — ALERT zone (5.30%+)',
+            return ('ALERT', f'{close:.3f}% — ALERT zone (5.30%+)',
                     'Structural regime shift — multi-year re-rating risk')
         if close >= 5.0:
-            return ('WARNING',
-                    f'{close:.3f}% — WARNING zone (5.00–5.29%)',
-                    '')
+            return ('WARNING', f'{close:.3f}% — WARNING zone (5.00–5.29%)', '')
         if close >= 4.8:
-            return ('WATCH',
-                    f'{close:.3f}% — WATCH zone (4.80–4.99%)',
-                    '')
+            return ('WATCH', f'{close:.3f}% — WATCH zone (4.80–4.99%)', '')
         return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.80%)', '')
-
     if key == 'SOX':
         ma200 = data.get('ma200')
         if ma200 is None:
             return 'UNKNOWN', 'Insufficient history for 200DMA', ''
-        ma200_prev = data.get('ma200_prev')
-        pct = (close - ma200) / ma200 * 100
-        pct_str = f'+{pct:.1f}%' if pct >= 0 else f'{pct:.1f}%'
+        ma200_prev  = data.get('ma200_prev')
+        pct         = (close - ma200) / ma200 * 100
+        pct_str     = f'+{pct:.1f}%' if pct >= 0 else f'{pct:.1f}%'
         ma_declining = (ma200_prev is not None) and (ma200 < ma200_prev)
         if close < ma200 and ma_declining:
             return ('ALERT',
@@ -267,12 +293,9 @@ def get_macro_status(key: str, data: dict) -> tuple:
                     'Pause SEMG additions — redirect to VDPG/SGLS')
         if pct <= 3.0:
             return ('WATCH',
-                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WATCH zone (within 3% of 200DMA)',
-                    '')
+                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WATCH zone (within 3% of 200DMA)', '')
         return ('CLEAR',
-                f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — CLEAR zone (>3% above 200DMA)',
-                '')
-
+                f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — CLEAR zone (>3% above 200DMA)', '')
     return 'UNKNOWN', '', ''
 
 
@@ -283,98 +306,10 @@ _MACRO_META = {
 }
 
 
-def _macro_threshold_reference() -> html.Div:
-    TH_C = {**TH_STYLE, 'textAlign': 'left', 'whiteSpace': 'nowrap', 'paddingLeft': '14px'}
-    TD_C = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top', 'paddingLeft': '14px'}
-
-    def tier_col(label, color, range_text, action=None):
-        """One column cell: coloured badge + range + optional action."""
-        children = [
-            html.Span(label, style={
-                'background': color + '22', 'color': color,
-                'border': f'1px solid {color}',
-                'padding': '2px 9px', 'borderRadius': '20px',
-                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.4px',
-                'display': 'inline-block', 'marginBottom': '5px',
-            }),
-            html.Div(range_text, style={
-                'color': color, 'fontSize': '12px', 'fontWeight': '600',
-                'marginBottom': '4px' if action else '0',
-            }),
-        ]
-        if action:
-            children.append(html.Div(action, style={
-                'color': MUTED, 'fontSize': '11px', 'lineHeight': '1.5',
-                'borderLeft': f'2px solid {color}', 'paddingLeft': '6px',
-                'marginTop': '2px',
-            }))
-        return html.Td(children, style={**TD_C, 'minWidth': '160px'})
-
-    rows = [
-        html.Tr([
-            html.Td([
-                html.Div('TNX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('10Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  'below 4.50%'),
-            tier_col('WATCH',   YELLOW, '4.50 – 4.79%'),
-            tier_col('WARNING', ORANGE, '4.80 – 4.99%',
-                     'Pause SEMG/WTAI new buys\nDelay IWMO entry'),
-            tier_col('ALERT',   RED,    '5.00%+',
-                     'Redirect contributions\nSGLS gets 40% of monthly'),
-        ], style={'borderBottom': f'1px solid {BORDER}'}),
-
-        html.Tr([
-            html.Td([
-                html.Div('TYX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('30Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  'below 4.80%'),
-            tier_col('WATCH',   YELLOW, '4.80 – 4.99%'),
-            tier_col('WARNING', ORANGE, '5.00 – 5.29%'),
-            tier_col('ALERT',   RED,    '5.30%+',
-                     'Structural regime shift\nMulti-year re-rating risk'),
-        ], style={'borderBottom': f'1px solid {BORDER}'}),
-
-        html.Tr([
-            html.Td([
-                html.Div('SOX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('Semiconductor Index', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  '>3% above 200DMA'),
-            tier_col('WATCH',   YELLOW, 'Within 3% of 200DMA'),
-            tier_col('WARNING', ORANGE, 'First close below 200DMA',
-                     'Pause SEMG additions\nRedirect to VDPG/SGLS'),
-            tier_col('ALERT',   RED,    'Sustained break below 200DMA\n+ MA turning down',
-                     'Pause SEMG additions\nRedirect to VDPG/SGLS'),
-        ]),
-    ]
-
-    thead = html.Thead(html.Tr([
-        html.Th(h, style=TH_C)
-        for h in ['Indicator', 'CLEAR', 'WATCH', 'WARNING', 'ALERT']
-    ]))
-
-    return card([
-        html.H3('Macro Alert Thresholds & Rationale', style={
-            'color': TEXT, 'margin': '0 0 4px 0', 'fontSize': '14px', 'fontWeight': '700',
-        }),
-        html.P('Static reference — thresholds applied to the live macro panel above',
-               style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
-        html.Div(
-            html.Table(
-                [thead, html.Tbody(rows)],
-                style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'},
-            ),
-            style={'overflowX': 'auto'},
-        ),
-    ])
-
-
 def build_macro_panel(macro_data: dict) -> html.Div:
     cards = []
     for key in ['TNX', 'TYX', 'SOX']:
-        data = macro_data.get(key)
+        data      = macro_data.get(key)
         status, threshold_label, action = get_macro_status(key, data)
         color     = MACRO_STATUS_COLOR.get(status, MUTED)
         bg        = MACRO_STATUS_BG.get(status, CARD)
@@ -390,10 +325,7 @@ def build_macro_panel(macro_data: dict) -> html.Div:
                     'fontWeight': '700', 'fontSize': '11px',
                     'marginRight': '10px', 'letterSpacing': '0.5px',
                 }),
-                html.Span(ticker_label, style={
-                    'color': TEXT, 'fontWeight': '700', 'fontSize': '15px',
-                    'marginRight': '8px',
-                }),
+                html.Span(ticker_label, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '15px', 'marginRight': '8px'}),
                 html.Span(full_name, style={'color': MUTED, 'fontSize': '11px'}),
             ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
             html.P(threshold_label, style={
@@ -403,31 +335,22 @@ def build_macro_panel(macro_data: dict) -> html.Div:
         ]
         if action:
             card_children.append(html.P(f'Action: {action}', style={
-                'color': color, 'fontSize': '12px', 'margin': '4px 0 0 0',
-                'fontStyle': 'italic',
+                'color': color, 'fontSize': '12px', 'margin': '4px 0 0 0', 'fontStyle': 'italic',
             }))
         if as_of:
             card_children.append(html.Span(f'as of {as_of}', style={
                 'color': MUTED, 'fontSize': '10px', 'display': 'block', 'marginTop': '6px',
             }))
-
         cards.append(html.Div(card_children, style={
-            'background': bg,
-            'border': f'1px solid {color}',
-            'borderLeft': f'4px solid {color}',
-            'borderRadius': '8px',
-            'padding': '12px 16px',
-            'flex': '1',
-            'minWidth': '260px',
+            'background': bg, 'border': f'1px solid {color}',
+            'borderLeft': f'4px solid {color}', 'borderRadius': '8px',
+            'padding': '12px 16px', 'flex': '1', 'minWidth': '260px',
             'boxShadow': f'0 0 14px {color}28',
         }))
 
     return html.Div([
         html.Div([
-            html.Span('MACRO CONDITIONS', style={
-                'color': MUTED, 'fontWeight': '700', 'fontSize': '11px',
-                'letterSpacing': '1px',
-            }),
+            html.Span('MACRO CONDITIONS', style={'color': MUTED, 'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '1px'}),
             html.Span('  ·  Rates & Semiconductor Health  ·  refreshes every 60s',
                       style={'color': MUTED, 'fontSize': '11px'}),
         ], style={'marginBottom': '10px'}),
@@ -464,8 +387,18 @@ def tf_btn_style(tf: str, selected: str) -> dict:
         'background': ACCENT if active else 'transparent',
         'color': '#000' if active else MUTED,
         'border': 'none', 'padding': '4px 11px', 'cursor': 'pointer',
-        'fontFamily': 'monospace', 'fontSize': '12px',
-        'fontWeight': '600', 'borderRadius': '4px',
+        'fontFamily': 'monospace', 'fontSize': '12px', 'fontWeight': '600', 'borderRadius': '4px',
+    }
+
+
+def toggle_btn_style(this_val: str, current_val: str) -> dict:
+    active = this_val == current_val
+    return {
+        'background': ACCENT if active else 'transparent',
+        'color': '#000' if active else MUTED,
+        'border': f'1px solid {ACCENT if active else BORDER}',
+        'borderRadius': '5px', 'padding': '4px 13px', 'cursor': 'pointer',
+        'fontFamily': 'monospace', 'fontSize': '11px', 'fontWeight': '700',
     }
 
 
@@ -513,97 +446,227 @@ def build_projection_fig():
 
 PROJ_FIG, PROJ_FINAL, PROJ_CONTRIB = build_projection_fig()
 
-# ── Signal Summary table builder ──────────────────────────────────────────────
+# ── Table styles ──────────────────────────────────────────────────────────────
 TH_STYLE = {
     'padding': '10px 14px', 'color': MUTED, 'fontSize': '11px',
     'fontWeight': '600', 'textAlign': 'left', 'borderBottom': f'1px solid {BORDER}',
     'whiteSpace': 'nowrap',
 }
 TD_STYLE = {
-    'padding': '14px 14px', 'fontSize': '13px', 'verticalAlign': 'middle',
+    'padding': '12px 14px', 'fontSize': '13px', 'verticalAlign': 'middle',
     'borderBottom': f'1px solid {BORDER}',
 }
 
 
-def vs_cell(label: str, pct: float) -> html.Td:
-    color = GREEN if label == 'Above' else RED
-    return html.Td([
-        html.Span(label, style={'color': color, 'fontWeight': '700'}),
-        html.Span(f'  {pct:+.1f}%', style={'color': MUTED, 'fontSize': '11px'}),
-    ], style=TD_STYLE)
+# ── Macro threshold reference panel ──────────────────────────────────────────
+def _macro_threshold_reference() -> html.Div:
+    TH_C = {**TH_STYLE, 'textAlign': 'left', 'whiteSpace': 'nowrap', 'paddingLeft': '14px'}
+    TD_C = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top', 'paddingLeft': '14px'}
 
+    def tier_col(label, color, range_text, action=None):
+        children = [
+            html.Span(label, style={
+                'background': color + '22', 'color': color,
+                'border': f'1px solid {color}',
+                'padding': '2px 9px', 'borderRadius': '20px',
+                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.4px',
+                'display': 'inline-block', 'marginBottom': '5px',
+            }),
+            html.Div(range_text, style={'color': color, 'fontSize': '12px', 'fontWeight': '600',
+                                        'marginBottom': '4px' if action else '0'}),
+        ]
+        if action:
+            children.append(html.Div(action, style={
+                'color': MUTED, 'fontSize': '11px', 'lineHeight': '1.5',
+                'borderLeft': f'2px solid {color}', 'paddingLeft': '6px', 'marginTop': '2px',
+            }))
+        return html.Td(children, style={**TD_C, 'minWidth': '160px'})
 
-def rec_cell(rec: str) -> html.Td:
-    color = REC_COLOR[rec]
-    bg    = color + '22'
-    return html.Td(
-        html.Span(rec, style={
-            'background': bg, 'color': color,
-            'border': f'1px solid {color}',
-            'padding': '3px 12px', 'borderRadius': '20px',
-            'fontWeight': '700', 'fontSize': '12px', 'letterSpacing': '0.5px',
+    rows = [
+        html.Tr([
+            html.Td([
+                html.Div('TNX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('10Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  'below 4.50%'),
+            tier_col('WATCH',   YELLOW, '4.50 – 4.79%'),
+            tier_col('WARNING', ORANGE, '4.80 – 4.99%', 'Pause SEMG/WTAI new buys\nDelay IWMO entry'),
+            tier_col('ALERT',   RED,    '5.00%+',        'Redirect contributions\nSGLS gets 40% of monthly'),
+        ], style={'borderBottom': f'1px solid {BORDER}'}),
+        html.Tr([
+            html.Td([
+                html.Div('TYX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('30Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  'below 4.80%'),
+            tier_col('WATCH',   YELLOW, '4.80 – 4.99%'),
+            tier_col('WARNING', ORANGE, '5.00 – 5.29%'),
+            tier_col('ALERT',   RED,    '5.30%+', 'Structural regime shift\nMulti-year re-rating risk'),
+        ], style={'borderBottom': f'1px solid {BORDER}'}),
+        html.Tr([
+            html.Td([
+                html.Div('SOX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('Semiconductor Index', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD_C),
+            tier_col('CLEAR',   GREEN,  '>3% above 200DMA'),
+            tier_col('WATCH',   YELLOW, 'Within 3% of 200DMA'),
+            tier_col('WARNING', ORANGE, 'First close below 200DMA',      'Pause SEMG additions\nRedirect to VDPG/SGLS'),
+            tier_col('ALERT',   RED,    'Sustained break + MA declining', 'Pause SEMG additions\nRedirect to VDPG/SGLS'),
+        ]),
+    ]
+    thead = html.Thead(html.Tr([html.Th(h, style=TH_C) for h in ['Indicator', 'CLEAR', 'WATCH', 'WARNING', 'ALERT']]))
+    return card([
+        html.H3('Macro Alert Thresholds & Rationale', style={
+            'color': TEXT, 'margin': '0 0 4px 0', 'fontSize': '14px', 'fontWeight': '700',
         }),
-        style=TD_STYLE,
-    )
+        html.P('Static reference — thresholds applied to the live macro panel above',
+               style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
+        html.Div(
+            html.Table([thead, html.Tbody(rows)],
+                       style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'}),
+            style={'overflowX': 'auto'},
+        ),
+    ])
 
 
-def build_summary_table(rows: list[dict]) -> html.Table:
-    headers = ['Signal', 'Reason', 'ETF', 'Price (p)', 'RSI 14',
-               'SMA 20', 'SMA 50', 'vs SMA20', 'vs SMA50']
+# ── Signal Summary table ──────────────────────────────────────────────────────
+def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
+    period_label = 'Wk %' if show_week else 'Day %'
+    headers = ['ETF', f'Price · {period_label}', 'Volume', 'Conviction', 'Action', 'Entry', 'RSI 14', 'SMA 20 / 50', 'Signal Changed']
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
     for row in rows:
-        etf  = row['etf']
-        data = row.get('data')
+        etf         = row['etf']
+        data        = row.get('data')
+        sig_changed = row.get('sig_changed', '—')
 
         if data is None:
             tr = html.Tr([
-                html.Td('—', style={**TD_STYLE, 'color': MUTED}),
-                html.Td('—', style={**TD_STYLE, 'color': MUTED}),
-                html.Td(etf, style={**TD_STYLE, 'fontWeight': '700', 'color': TEXT}),
-                html.Td('—', colSpan=6, style={**TD_STYLE, 'color': MUTED}),
-            ], style={'borderBottom': f'1px solid {BORDER}'})
-        else:
-            chg_color = GREEN if data['chg_pct'] >= 0 else RED
-            arrow     = '+' if data['chg_pct'] >= 0 else ''
-            tr = html.Tr([
-                # Signal badge — first
-                rec_cell(data['rec']),
-                # Reason — second
-                html.Td(data['reason'], style={
-                    **TD_STYLE,
-                    'color': MUTED, 'fontSize': '12px',
-                    'maxWidth': '300px', 'lineHeight': '1.5',
-                }),
-                # ETF name
                 html.Td([
                     html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                     html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE),
-                # Price
+                html.Td('No data', colSpan=8, style={**TD_STYLE, 'color': MUTED}),
+            ], style={'borderBottom': f'1px solid {BORDER}'})
+        else:
+            rec       = data['rec']
+            chg_pct   = data['week_chg_pct'] if show_week else data['chg_pct']
+            chg_color = GREEN if chg_pct >= 0 else RED
+            arrow     = '+' if chg_pct >= 0 else ''
+            row_bg    = ROW_TINT.get(rec, 'transparent')
+
+            # Volume cell
+            vr = data.get('vol_ratio')
+            if vr is not None:
+                vol_color  = GREEN if vr >= 1.3 else (YELLOW if vr >= 0.8 else MUTED)
+                proxy_note = data.get('vol_proxy')
+                vol_cell = html.Td([
+                    html.Span(f'{vr:.1f}×', style={'color': vol_color, 'fontWeight': '700'}),
+                    html.Div(
+                        f'vs 20d avg{" (proxy)" if proxy_note else ""}',
+                        style={'color': MUTED, 'fontSize': '10px'},
+                    ),
+                ], style=TD_STYLE)
+            else:
+                vol_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+
+            # Conviction cell
+            conv       = data['conviction']
+            conv_color = CONVICTION_COLOR[conv]
+            conv_cell  = html.Td(
+                html.Span(conv, style={
+                    'background': conv_color + '22', 'color': conv_color,
+                    'border': f'1px solid {conv_color}',
+                    'padding': '2px 9px', 'borderRadius': '20px',
+                    'fontWeight': '700', 'fontSize': '11px',
+                }),
+                style=TD_STYLE,
+            )
+
+            # Action cell
+            rec_color   = REC_COLOR[rec]
+            action_cell = html.Td(
+                html.Span(rec, style={
+                    'background': rec_color + '22', 'color': rec_color,
+                    'border': f'1px solid {rec_color}',
+                    'padding': '3px 12px', 'borderRadius': '20px',
+                    'fontWeight': '700', 'fontSize': '12px', 'letterSpacing': '0.5px',
+                }),
+                style=TD_STYLE,
+            )
+
+            # Entry cell
+            if rec == 'BUY':
+                entry_val   = f'{data["sma20"]:.2f}'
+                entry_sub   = 'near SMA20'
+                entry_color = GREEN
+            elif rec == 'SELL':
+                entry_val   = 'Avoid'
+                entry_sub   = 'wait for pullback'
+                entry_color = RED
+            else:
+                entry_val   = f'{data["sma50"]:.2f}'
+                entry_sub   = 'watch SMA50'
+                entry_color = MUTED
+            entry_cell = html.Td([
+                html.Div(entry_val, style={'color': entry_color, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div(entry_sub, style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD_STYLE)
+
+            # RSI cell
+            rsi_val   = data['rsi']
+            rsi_color = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
+            rsi_cell  = html.Td(
+                html.Span(f'{rsi_val:.1f}', style={'color': rsi_color, 'fontWeight': '600'}),
+                style=TD_STYLE,
+            )
+
+            # SMA combined cell
+            vs20_color = GREEN if data['vs20'] == 'Above' else RED
+            vs50_color = GREEN if data['vs50'] == 'Above' else RED
+            sma_cell   = html.Td([
+                html.Div([
+                    html.Span('20: ', style={'color': MUTED, 'fontSize': '10px'}),
+                    html.Span(f'{data["sma20"]:.2f}', style={'color': '#ffa657', 'fontSize': '12px'}),
+                    html.Span(f'  {data["vs20"]}', style={'color': vs20_color, 'fontSize': '10px'}),
+                ]),
+                html.Div([
+                    html.Span('50: ', style={'color': MUTED, 'fontSize': '10px'}),
+                    html.Span(f'{data["sma50"]:.2f}', style={'color': '#d2a8ff', 'fontSize': '12px'}),
+                    html.Span(f'  {data["vs50"]}', style={'color': vs50_color, 'fontSize': '10px'}),
+                ], style={'marginTop': '3px'}),
+            ], style=TD_STYLE)
+
+            # Signal changed cell
+            changed_color = ACCENT if sig_changed == 'Just now' else MUTED
+            changed_cell  = html.Td(
+                html.Span(sig_changed, style={'color': changed_color, 'fontSize': '12px'}),
+                style=TD_STYLE,
+            )
+
+            tr = html.Tr([
+                html.Td([
+                    html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
+                    html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+                ], style=TD_STYLE),
                 html.Td([
                     html.Span(f'{data["close"]:.2f}', style={'color': TEXT, 'fontWeight': '700'}),
                     html.Br(),
-                    html.Span(f'{arrow}{data["chg_pct"]:.2f}%',
-                              style={'color': chg_color, 'fontSize': '11px'}),
+                    html.Span(f'{arrow}{chg_pct:.2f}%', style={'color': chg_color, 'fontSize': '11px'}),
                 ], style=TD_STYLE),
-                # RSI
-                html.Td(
-                    html.Span(f'{data["rsi"]:.1f}', style={
-                        'color': RED if data['rsi'] > 70 else (GREEN if data['rsi'] < 30 else TEXT),
-                        'fontWeight': '600',
-                    }),
-                    style=TD_STYLE,
-                ),
-                # SMA20
-                html.Td(f'{data["sma20"]:.2f}', style={**TD_STYLE, 'color': '#ffa657'}),
-                # SMA50
-                html.Td(f'{data["sma50"]:.2f}', style={**TD_STYLE, 'color': '#d2a8ff'}),
-                # vs SMA20 / SMA50
-                vs_cell(data['vs20'], data['pct20']),
-                vs_cell(data['vs50'], data['pct50']),
-            ], style={'transition': 'background 0.15s'})
+                vol_cell,
+                conv_cell,
+                action_cell,
+                entry_cell,
+                rsi_cell,
+                sma_cell,
+                changed_cell,
+            ], style={
+                'background': row_bg,
+                'transition': 'background 0.15s',
+                'borderBottom': f'1px solid {BORDER}',
+            })
 
         tbody_rows.append(tr)
 
@@ -621,7 +684,6 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
 )
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
 server = app.server
 server.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 DASHBOARD_PASSWORD = os.environ.get('DASHBOARD_PASSWORD')
@@ -689,25 +751,20 @@ def _require_auth():
 
 
 app.layout = html.Div([
-
     # ── Header ────────────────────────────────────────────────────────────────
     html.Div([
         html.Div([
             html.H1('ISA Momentum Terminal', style={
-                'color': TEXT, 'margin': '0', 'fontSize': '18px',
-                'fontWeight': '700', 'letterSpacing': '0.5px',
+                'color': TEXT, 'margin': '0', 'fontSize': '18px', 'fontWeight': '700', 'letterSpacing': '0.5px',
             }),
             html.P('LSE ETF Tracker  ·  Live Data  ·  yfinance', style={
                 'color': MUTED, 'margin': '2px 0 0 0', 'fontSize': '11px',
             }),
         ]),
-        html.Div(id='header-updated', style={
-            'color': MUTED, 'fontSize': '11px', 'textAlign': 'right',
-        }),
+        html.Div(id='header-updated', style={'color': MUTED, 'fontSize': '11px', 'textAlign': 'right'}),
     ], style={
         'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
-        'padding': '14px 20px', 'background': CARD,
-        'borderBottom': f'1px solid {BORDER}',
+        'padding': '14px 20px', 'background': CARD, 'borderBottom': f'1px solid {BORDER}',
     }),
 
     # ── Macro Alert Panel ─────────────────────────────────────────────────────
@@ -716,27 +773,14 @@ app.layout = html.Div([
     # ── Tabs ──────────────────────────────────────────────────────────────────
     html.Div([
         dcc.Tabs(
-            id='main-tabs',
-            value='signal-summary',
+            id='main-tabs', value='signal-summary',
             children=[
-                dcc.Tab(
-                    label='Signal Summary',
-                    value='signal-summary',
-                    style=TAB_STYLE,
-                    selected_style=TAB_SELECTED,
-                ),
-                dcc.Tab(
-                    label='Charts',
-                    value='charts',
-                    style=TAB_STYLE,
-                    selected_style=TAB_SELECTED,
-                ),
-                dcc.Tab(
-                    label='ISA & Retirement',
-                    value='isa',
-                    style=TAB_STYLE,
-                    selected_style=TAB_SELECTED,
-                ),
+                dcc.Tab(label='Signal Summary', value='signal-summary',
+                        style=TAB_STYLE, selected_style=TAB_SELECTED),
+                dcc.Tab(label='Charts',          value='charts',
+                        style=TAB_STYLE, selected_style=TAB_SELECTED),
+                dcc.Tab(label='ISA & Retirement', value='isa',
+                        style=TAB_STYLE, selected_style=TAB_SELECTED),
             ],
             colors={'border': BORDER, 'primary': ACCENT, 'background': BG},
         ),
@@ -747,8 +791,9 @@ app.layout = html.Div([
              style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '0 16px 40px'}),
 
     # ── Stores & intervals ────────────────────────────────────────────────────
-    dcc.Store(id='selected-etf', data='IWMO'),
-    dcc.Store(id='selected-tf',  data='1M'),
+    dcc.Store(id='selected-etf',  data='IWMO'),
+    dcc.Store(id='selected-tf',   data='1M'),
+    dcc.Store(id='price-period',  data='today'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -758,10 +803,11 @@ app.layout = html.Div([
 @app.callback(
     Output('tab-content', 'children'),
     Input('main-tabs', 'value'),
-    [State('selected-etf', 'data'), State('selected-tf', 'data')],
+    [State('selected-etf', 'data'), State('selected-tf', 'data'), State('price-period', 'data')],
 )
-def render_tab(tab, sel_etf, sel_tf):
+def render_tab(tab, sel_etf, sel_tf, price_period):
     if tab == 'signal-summary':
+        period = price_period or 'today'
         return html.Div([
             card([
                 html.Div([
@@ -769,20 +815,22 @@ def render_tab(tab, sel_etf, sel_tf):
                         html.H2('Signal Summary', style={
                             'color': TEXT, 'margin': '0', 'fontSize': '15px', 'fontWeight': '700',
                         }),
-                        html.P('Live BUY / HOLD / SELL recommendations across all ETFs',
+                        html.P('Live BUY / HOLD / SELL recommendations · sorted by daily gain',
                                style={'color': MUTED, 'fontSize': '11px', 'margin': '2px 0 0 0'}),
                     ]),
-                    html.Div(
-                        html.Div(id='summary-updated',
-                                 style={'color': MUTED, 'fontSize': '11px'}),
-                        style={'textAlign': 'right'},
-                    ),
+                    html.Div([
+                        html.Div([
+                            html.Span('Show change:', style={'color': MUTED, 'fontSize': '11px', 'marginRight': '8px'}),
+                            html.Button('Today', id='btn-today', n_clicks=0,
+                                        style=toggle_btn_style('today', period)),
+                            html.Button('This Week', id='btn-week', n_clicks=0,
+                                        style={**toggle_btn_style('week', period), 'marginLeft': '4px'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
+                        html.Div(id='summary-updated', style={'color': MUTED, 'fontSize': '11px', 'textAlign': 'right'}),
+                    ], style={'textAlign': 'right'}),
                 ], style={'display': 'flex', 'justifyContent': 'space-between',
                           'alignItems': 'flex-start', 'marginBottom': '16px'}),
-                dcc.Loading(
-                    html.Div(id='signal-table'),
-                    color=ACCENT,
-                ),
+                dcc.Loading(html.Div(id='signal-table'), color=ACCENT),
             ], {'overflowX': 'auto'}),
             _macro_threshold_reference(),
         ])
@@ -802,9 +850,7 @@ def render_tab(tab, sel_etf, sel_tf):
                         html.H2(id='chart-title', style={
                             'color': TEXT, 'margin': '0', 'fontSize': '15px', 'fontWeight': '700',
                         }),
-                        html.P(id='chart-subtitle', style={
-                            'color': MUTED, 'margin': '2px 0 0 0', 'fontSize': '11px',
-                        }),
+                        html.P(id='chart-subtitle', style={'color': MUTED, 'margin': '2px 0 0 0', 'fontSize': '11px'}),
                     ]),
                     html.Div([
                         html.Div(id='price-display'),
@@ -819,15 +865,11 @@ def render_tab(tab, sel_etf, sel_tf):
                      for tf in TIMEFRAMES],
                     style={'display': 'flex', 'gap': '4px', 'marginBottom': '10px'},
                 ),
-
                 html.Div(id='signal-desc', style={
                     'color': MUTED, 'fontSize': '11px', 'marginBottom': '10px',
                     'padding': '6px 10px', 'background': BG, 'borderRadius': '6px',
                 }),
-                dcc.Loading(
-                    dcc.Graph(id='main-chart', config={'displayModeBar': False}),
-                    color=ACCENT,
-                ),
+                dcc.Loading(dcc.Graph(id='main-chart', config={'displayModeBar': False}), color=ACCENT),
             ]),
         ])
 
@@ -855,7 +897,6 @@ def render_tab(tab, sel_etf, sel_tf):
             html.Div(id='isa-stats'),
             dcc.Graph(id='isa-chart', config={'displayModeBar': False}),
         ]),
-
         card([
             html.H3('20-Year Retirement Projection', style={
                 'color': TEXT, 'marginBottom': '4px', 'fontSize': '15px', 'marginTop': '0',
@@ -863,33 +904,63 @@ def render_tab(tab, sel_etf, sel_tf):
             html.P(f'£{MONTHLY_INVEST:,}/month  ·  {int(ANNUAL_RETURN*100)}% base annual return  ·  {PROJ_YEARS} years',
                    style={'color': MUTED, 'fontSize': '11px', 'marginBottom': '14px'}),
             html.Div([
-                stat_box('Base Case (12%)',   f'£{PROJ_FINAL:,.0f}',              ACCENT),
-                stat_box('Total Contributed', f'£{PROJ_CONTRIB:,.0f}',            TEXT),
-                stat_box('Investment Growth', f'£{PROJ_FINAL - PROJ_CONTRIB:,.0f}', GREEN),
+                stat_box('Base Case (12%)',    f'£{PROJ_FINAL:,.0f}',              ACCENT),
+                stat_box('Total Contributed',  f'£{PROJ_CONTRIB:,.0f}',            TEXT),
+                stat_box('Investment Growth',  f'£{PROJ_FINAL - PROJ_CONTRIB:,.0f}', GREEN),
             ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '14px'}),
             dcc.Graph(figure=PROJ_FIG, config={'displayModeBar': False}),
         ]),
     ])
 
 
+# ── Price period toggle ───────────────────────────────────────────────────────
+@app.callback(
+    Output('price-period', 'data'),
+    [Input('btn-today', 'n_clicks'), Input('btn-week', 'n_clicks')],
+    prevent_initial_call=True,
+)
+def toggle_price_period(n_today, n_week):
+    triggered = dash.callback_context.triggered[0]['prop_id']
+    return 'week' if 'btn-week' in triggered else 'today'
+
+
+@app.callback(
+    [Output('btn-today', 'style'), Output('btn-week', 'style')],
+    Input('price-period', 'data'),
+)
+def style_toggle_buttons(period):
+    p = period or 'today'
+    return toggle_btn_style('today', p), {**toggle_btn_style('week', p), 'marginLeft': '4px'}
+
+
 # ── Signal Summary callback ───────────────────────────────────────────────────
 @app.callback(
-    [Output('signal-table',   'children'),
+    [Output('signal-table',    'children'),
      Output('summary-updated', 'children')],
-    [Input('main-tabs', 'value'),
-     Input('refresh',   'n_intervals')],
+    [Input('main-tabs',    'value'),
+     Input('refresh',      'n_intervals'),
+     Input('price-period', 'data')],
 )
-def update_signal_summary(tab, _):
+def update_signal_summary(tab, _, price_period):
     if tab != 'signal-summary':
         return dash.no_update, dash.no_update
 
+    show_week = (price_period or 'today') == 'week'
     rows = []
     for etf in ETFS:
-        data = fetch_latest(TICKERS[etf])
-        rows.append({'etf': etf, 'data': data})
+        proxy     = WTAI_VOL_PROXY if etf == 'WTAI' else None
+        data      = fetch_latest(TICKERS[etf], vol_proxy=proxy)
+        # Clear volume for ETFs not in VOLUME_ETFS and not WTAI
+        if data and etf not in VOLUME_ETFS and etf != 'WTAI':
+            data['vol_ratio'] = None
+        sig_changed = _update_signal_history(etf, data['rec']) if data else '—'
+        rows.append({'etf': etf, 'data': data, 'sig_changed': sig_changed})
+
+    # Sort gainers first (by today's daily change regardless of toggle)
+    rows.sort(key=lambda r: r['data']['chg_pct'] if r['data'] else -999.0, reverse=True)
 
     now = datetime.now().strftime('%H:%M:%S')
-    return build_summary_table(rows), f'Updated {now}'
+    return build_summary_table(rows, show_week=show_week), f'Updated {now}'
 
 
 # ── ETF / TF store callbacks ──────────────────────────────────────────────────
@@ -947,10 +1018,11 @@ def style_tf_buttons(selected):
     ],
 )
 def update_chart(etf, tf, _):
-    ticker = TICKERS[etf]
-    days   = TIMEFRAMES[tf]
-    df     = fetch_data(ticker, max(days, _INDICATOR_DAYS))
-    now    = datetime.now().strftime('%H:%M:%S')
+    ticker     = TICKERS[etf]
+    days       = TIMEFRAMES[tf]
+    df         = fetch_data(ticker, max(days, _INDICATOR_DAYS))
+    now        = datetime.now().strftime('%H:%M:%S')
+    has_volume = etf in VOLUME_ETFS
 
     def empty_fig(msg='No data available'):
         fig = go.Figure()
@@ -969,20 +1041,24 @@ def update_chart(etf, tf, _):
     if display_df.empty:
         display_df = df.tail(20)
 
-    close    = float(df['Close'].iloc[-1])
-    prev     = float(df['Close'].iloc[-2]) if len(df) > 1 else close
-    chg      = close - prev
-    chg_pct  = (chg / prev * 100) if prev else 0
-    rsi_s    = df['RSI'].dropna()
-    sma20_s  = df['SMA20'].dropna()
-    sma50_s  = df['SMA50'].dropna()
-    rsi      = float(rsi_s.iloc[-1])   if not rsi_s.empty   else 50.0
-    sma20    = float(sma20_s.iloc[-1]) if not sma20_s.empty else close
-    sma50    = float(sma50_s.iloc[-1]) if not sma50_s.empty else close
-    signal   = get_signal(rsi, close, sma20, sma50)
+    close   = float(df['Close'].iloc[-1])
+    prev    = float(df['Close'].iloc[-2]) if len(df) > 1 else close
+    chg     = close - prev
+    chg_pct = (chg / prev * 100) if prev else 0
+    rsi_s   = df['RSI'].dropna()
+    sma20_s = df['SMA20'].dropna()
+    sma50_s = df['SMA50'].dropna()
+    rsi     = float(rsi_s.iloc[-1])   if not rsi_s.empty   else 50.0
+    sma20   = float(sma20_s.iloc[-1]) if not sma20_s.empty else close
+    sma50   = float(sma50_s.iloc[-1]) if not sma50_s.empty else close
+    signal  = get_signal(rsi, close, sma20, sma50)
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.70, 0.30], vertical_spacing=0.04)
+    if has_volume:
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                            row_heights=[0.55, 0.25, 0.20], vertical_spacing=0.03)
+    else:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                            row_heights=[0.70, 0.30], vertical_spacing=0.04)
 
     fig.add_trace(go.Candlestick(
         x=display_df.index,
@@ -1007,24 +1083,42 @@ def update_chart(etf, tf, _):
             fill='tozeroy', fillcolor='rgba(88,166,255,0.10)',
         ), row=2, col=1)
         for level, lcolor in [(70, RED), (30, GREEN), (50, BORDER)]:
-            fig.add_hline(y=level, line_dash='dot', line_color=lcolor,
-                          line_width=1, row=2, col=1)
+            fig.add_hline(y=level, line_dash='dot', line_color=lcolor, line_width=1, row=2, col=1)
 
+    if has_volume and 'Volume' in display_df.columns:
+        vol_colors = [
+            GREEN if float(row['Close']) >= float(row['Open']) else RED
+            for _, row in display_df.iterrows()
+        ]
+        fig.add_trace(go.Bar(
+            x=display_df.index, y=display_df['Volume'],
+            name='Volume', marker_color=vol_colors, opacity=0.65,
+        ), row=3, col=1)
+        avg_vol_s = df['Volume'].rolling(20).mean()
+        avg_disp  = avg_vol_s[avg_vol_s.index >= cutoff].dropna()
+        if not avg_disp.empty:
+            fig.add_trace(go.Scatter(
+                x=avg_disp.index, y=avg_disp, name='Avg Vol 20d',
+                line=dict(color=YELLOW, width=1.2, dash='dot'),
+            ), row=3, col=1)
+
+    chart_height = 460 if has_volume else 400
     fig.update_layout(
         template='plotly_dark', paper_bgcolor=CARD, plot_bgcolor=CARD,
         font=dict(family='monospace', color=TEXT, size=11),
-        margin=dict(l=0, r=0, t=0, b=0), height=400, showlegend=True,
-        legend=dict(orientation='h', y=1.03, x=0,
-                    font=dict(size=10), bgcolor='rgba(0,0,0,0)'),
+        margin=dict(l=0, r=0, t=0, b=0), height=chart_height, showlegend=True,
+        legend=dict(orientation='h', y=1.03, x=0, font=dict(size=10), bgcolor='rgba(0,0,0,0)'),
         xaxis_rangeslider_visible=False, hovermode='x unified',
     )
     fig.update_xaxes(gridcolor=BORDER, zeroline=False)
     fig.update_yaxes(gridcolor=BORDER, zeroline=False)
     fig.update_yaxes(title_text='Price (p)', row=1, col=1, title_font_size=10)
-    fig.update_yaxes(title_text='RSI', row=2, col=1, range=[0, 100], title_font_size=10)
+    fig.update_yaxes(title_text='RSI',       row=2, col=1, range=[0, 100], title_font_size=10)
+    if has_volume:
+        fig.update_yaxes(title_text='Volume', row=3, col=1, title_font_size=10)
 
-    arrow   = '+' if chg >= 0 else ''
-    c_color = GREEN if chg >= 0 else RED
+    arrow    = '+' if chg >= 0 else ''
+    c_color  = GREEN if chg >= 0 else RED
     price_el = html.Div([
         html.Span(f'{close:.2f}p', style={'color': TEXT, 'fontSize': '20px', 'fontWeight': '700'}),
         html.Span(f'  {arrow}{chg_pct:.2f}%', style={'color': c_color, 'fontSize': '13px', 'marginLeft': '6px'}),
@@ -1034,10 +1128,8 @@ def update_chart(etf, tf, _):
     ])
     sig_color = SIG_COLOR[signal]
     badge = html.Span(signal, style={
-        'background': sig_color,
-        'color': '#000' if signal == 'BUY' else '#fff',
-        'padding': '3px 12px', 'borderRadius': '20px',
-        'fontWeight': '700', 'fontSize': '11px',
+        'background': sig_color, 'color': '#000' if signal == 'BUY' else '#fff',
+        'padding': '3px 12px', 'borderRadius': '20px', 'fontWeight': '700', 'fontSize': '11px',
     })
 
     return (fig,
@@ -1089,7 +1181,7 @@ def update_isa(invested):
     return stats, fig
 
 
-# ── Macro panel callback ─────────────────────────────────────────────────────
+# ── Macro panel callback ──────────────────────────────────────────────────────
 @app.callback(
     Output('macro-alert-panel', 'children'),
     Input('refresh', 'n_intervals'),
@@ -1104,7 +1196,6 @@ if __name__ == '__main__':
         local_ip = socket.gethostbyname(socket.gethostname())
     except Exception:
         local_ip = '0.0.0.0'
-
     print("\n" + "=" * 52)
     print("  ISA Momentum Terminal")
     print("  Local:   http://localhost:8050")
