@@ -282,6 +282,115 @@ _MACRO_META = {
 }
 
 
+def _macro_threshold_reference() -> html.Div:
+    TH = {**TH_STYLE, 'textAlign': 'center', 'whiteSpace': 'nowrap'}
+    TD = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top'}
+
+    def level_cell(label, color):
+        return html.Td(
+            html.Span(label, style={
+                'background': color + '22', 'color': color,
+                'border': f'1px solid {color}',
+                'padding': '2px 10px', 'borderRadius': '20px',
+                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.5px',
+                'whiteSpace': 'nowrap',
+            }),
+            style={**TD, 'textAlign': 'center'},
+        )
+
+    rows = [
+        html.Tr([
+            html.Td([
+                html.Div('TNX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('10Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD),
+            level_cell('CLEAR', GREEN),
+            html.Td('below 4.5%', style={**TD, 'color': GREEN}),
+            level_cell('WATCH', YELLOW),
+            html.Td('4.5 – 4.79%', style={**TD, 'color': YELLOW}),
+            level_cell('WARNING', ORANGE),
+            html.Td('4.8 – 4.99%', style={**TD, 'color': ORANGE}),
+            level_cell('ALERT', RED),
+            html.Td('5.0%+', style={**TD, 'color': RED}),
+            html.Td([
+                html.Div([
+                    html.Span('WARNING: ', style={'color': ORANGE, 'fontWeight': '700'}),
+                    html.Span('Pause SEMG/WTAI new buys, delay IWMO entry',
+                              style={'color': MUTED}),
+                ], style={'marginBottom': '4px'}),
+                html.Div([
+                    html.Span('ALERT: ', style={'color': RED, 'fontWeight': '700'}),
+                    html.Span('Redirect contributions — SGLS gets 40% of monthly',
+                              style={'color': MUTED}),
+                ]),
+            ], style={**TD, 'lineHeight': '1.6'}),
+        ], style={'borderBottom': f'1px solid {BORDER}'}),
+
+        html.Tr([
+            html.Td([
+                html.Div('TYX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('30Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD),
+            level_cell('CLEAR', GREEN),
+            html.Td('below 4.8%', style={**TD, 'color': GREEN}),
+            level_cell('WATCH', YELLOW),
+            html.Td('4.8 – 4.99%', style={**TD, 'color': YELLOW}),
+            level_cell('WARNING', ORANGE),
+            html.Td('5.0 – 5.29%', style={**TD, 'color': ORANGE}),
+            level_cell('ALERT', RED),
+            html.Td('5.3%+', style={**TD, 'color': RED}),
+            html.Td([
+                html.Div([
+                    html.Span('ALERT: ', style={'color': RED, 'fontWeight': '700'}),
+                    html.Span('Structural regime shift — multi-year re-rating risk',
+                              style={'color': MUTED}),
+                ]),
+            ], style={**TD, 'lineHeight': '1.6'}),
+        ], style={'borderBottom': f'1px solid {BORDER}'}),
+
+        html.Tr([
+            html.Td([
+                html.Div('SOX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                html.Div('Semiconductor Index', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ], style=TD),
+            level_cell('CLEAR', GREEN),
+            html.Td('>3% above 200DMA', style={**TD, 'color': GREEN}),
+            level_cell('WATCH', YELLOW),
+            html.Td('Within 3% of 200DMA', style={**TD, 'color': YELLOW}),
+            level_cell('WARNING', ORANGE),
+            html.Td('First close below 200DMA', style={**TD, 'color': ORANGE}),
+            level_cell('ALERT', RED),
+            html.Td('Sustained break + MA turning down', style={**TD, 'color': RED}),
+            html.Td([
+                html.Div([
+                    html.Span('WARNING: ', style={'color': ORANGE, 'fontWeight': '700'}),
+                    html.Span('Pause SEMG additions — redirect to VDPG/SGLS',
+                              style={'color': MUTED}),
+                ]),
+            ], style={**TD, 'lineHeight': '1.6'}),
+        ]),
+    ]
+
+    headers = ['Indicator', 'Level', 'Trigger', 'Level', 'Trigger',
+               'Level', 'Trigger', 'Level', 'Trigger', 'Action Guidance']
+    thead = html.Thead(html.Tr([html.Th(h, style=TH) for h in headers]))
+
+    return card([
+        html.H3('Macro Alert Thresholds & Rationale', style={
+            'color': TEXT, 'margin': '0 0 4px 0', 'fontSize': '14px', 'fontWeight': '700',
+        }),
+        html.P('Static reference — thresholds applied to live macro panel above',
+               style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
+        html.Div(
+            html.Table(
+                [thead, html.Tbody(rows)],
+                style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'},
+            ),
+            style={'overflowX': 'auto'},
+        ),
+    ])
+
+
 def build_macro_panel(macro_data: dict) -> html.Div:
     cards = []
     for key in ['TNX', 'TYX', 'SOX']:
@@ -624,10 +733,6 @@ app.layout = html.Div([
     # ── Macro Alert Panel ─────────────────────────────────────────────────────
     html.Div(id='macro-alert-panel'),
 
-    # ── Alert Banners ─────────────────────────────────────────────────────────
-    html.Div(id='buy-alert-banner'),
-    html.Div(id='sell-alert-banner'),
-
     # ── Tabs ──────────────────────────────────────────────────────────────────
     html.Div([
         dcc.Tabs(
@@ -664,11 +769,6 @@ app.layout = html.Div([
     # ── Stores & intervals ────────────────────────────────────────────────────
     dcc.Store(id='selected-etf', data='IWMO'),
     dcc.Store(id='selected-tf',  data='1M'),
-    dcc.Store(id='prev-signals', data={}),
-    dcc.Store(id='buy-trigger',  data=[]),
-    dcc.Store(id='sell-trigger', data=[]),
-    html.Div(id='notif-dummy',      style={'display': 'none'}),
-    html.Div(id='notif-sell-dummy', style={'display': 'none'}),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -692,23 +792,11 @@ def render_tab(tab, sel_etf, sel_tf):
                         html.P('Live BUY / HOLD / SELL recommendations across all ETFs',
                                style={'color': MUTED, 'fontSize': '11px', 'margin': '2px 0 0 0'}),
                     ]),
-                    html.Div([
+                    html.Div(
                         html.Div(id='summary-updated',
-                                 style={'color': MUTED, 'fontSize': '11px', 'marginBottom': '6px'}),
-                        html.Div([
-                            html.Button('Test Buy', id='test-alert-btn', n_clicks=0, style={
-                                'background': 'transparent', 'border': f'1px solid {GREEN}',
-                                'color': GREEN, 'padding': '3px 10px', 'borderRadius': '4px',
-                                'cursor': 'pointer', 'fontFamily': 'monospace', 'fontSize': '11px',
-                                'marginRight': '6px',
-                            }),
-                            html.Button('Test Sell', id='test-sell-btn', n_clicks=0, style={
-                                'background': 'transparent', 'border': f'1px solid {RED}',
-                                'color': RED, 'padding': '3px 10px', 'borderRadius': '4px',
-                                'cursor': 'pointer', 'fontFamily': 'monospace', 'fontSize': '11px',
-                            }),
-                        ], style={'display': 'flex'}),
-                    ], style={'textAlign': 'right'}),
+                                 style={'color': MUTED, 'fontSize': '11px'}),
+                        style={'textAlign': 'right'},
+                    ),
                 ], style={'display': 'flex', 'justifyContent': 'space-between',
                           'alignItems': 'flex-start', 'marginBottom': '16px'}),
                 dcc.Loading(
@@ -716,6 +804,7 @@ def render_tab(tab, sel_etf, sel_tf):
                     color=ACCENT,
                 ),
             ], {'overflowX': 'auto'}),
+            _macro_threshold_reference(),
         ])
 
     if tab == 'charts':
@@ -1027,221 +1116,6 @@ def update_isa(invested):
 )
 def update_macro_panel(_):
     return build_macro_panel(fetch_macro_indicators())
-
-
-# ── Alert: transition detector (BUY + SELL) ───────────────────────────────────
-@app.callback(
-    [Output('prev-signals', 'data'),
-     Output('buy-trigger',  'data'),
-     Output('sell-trigger', 'data')],
-    Input('refresh', 'n_intervals'),
-    State('prev-signals', 'data'),
-)
-def check_alerts(_, prev):
-    now_str      = datetime.now().strftime('%H:%M')
-    new_signals  = {}
-    buy_hits     = []
-    sell_hits    = []
-
-    for etf in ETFS:
-        data = fetch_latest(TICKERS[etf])
-        if data is None:
-            new_signals[etf] = prev.get(etf, 'HOLD')
-            continue
-        rec      = data['rec']
-        prev_rec = prev.get(etf)   # None on first load — skip alerting
-        new_signals[etf] = rec
-
-        if prev_rec is None:
-            continue
-
-        payload = {
-            'etf':    etf,
-            'name':   ETF_NAMES[etf],
-            'price':  data['close'],
-            'rsi':    data['rsi'],
-            'pct20':  data['pct20'],
-            'reason': data['reason'],
-            'time':   now_str,
-        }
-        if prev_rec != 'BUY'  and rec == 'BUY':
-            buy_hits.append(payload)
-        if prev_rec != 'SELL' and rec == 'SELL':
-            sell_hits.append(payload)
-
-    return new_signals, buy_hits, sell_hits
-
-
-# ── Buy Alert: banner renderer ────────────────────────────────────────────────
-@app.callback(
-    Output('buy-alert-banner', 'children'),
-    Input('buy-trigger', 'data'),
-)
-def render_buy_banner(triggered):
-    return _alert_banner(triggered, 'BUY')
-
-
-# ── Buy Alert: dismiss ────────────────────────────────────────────────────────
-@app.callback(
-    Output('buy-trigger', 'data', allow_duplicate=True),
-    Input('dismiss-alert-btn', 'n_clicks'),
-    prevent_initial_call=True,
-)
-def dismiss_buy_alert(_):
-    return []
-
-
-# ── Sell Alert: banner renderer ───────────────────────────────────────────────
-def _alert_banner(triggered, rec_type):
-    if not triggered:
-        return None
-    color   = RED   if rec_type == 'SELL' else GREEN
-    bg      = '#1a0d0d' if rec_type == 'SELL' else '#0d2018'
-    glow    = 'rgba(248,81,73,0.18)' if rec_type == 'SELL' else 'rgba(63,185,80,0.18)'
-    label   = f'{len(triggered)} ETF{"s" if len(triggered) > 1 else ""} entered {rec_type} territory'
-    dismiss_id = 'dismiss-sell-btn' if rec_type == 'SELL' else 'dismiss-alert-btn'
-
-    cards = []
-    for item in triggered:
-        cards.append(html.Div([
-            html.Div([
-                html.Span(rec_type, style={
-                    'background': color, 'color': '#fff' if rec_type == 'SELL' else '#000',
-                    'padding': '2px 10px', 'borderRadius': '20px',
-                    'fontWeight': '700', 'fontSize': '11px',
-                    'marginRight': '10px', 'letterSpacing': '0.5px',
-                }),
-                html.Span(item['etf'], style={
-                    'color': TEXT, 'fontWeight': '700', 'fontSize': '16px', 'marginRight': '8px',
-                }),
-                html.Span(item['name'], style={'color': MUTED, 'fontSize': '12px'}),
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
-            html.P(item['reason'], style={
-                'color': TEXT, 'fontSize': '12px', 'margin': '0 0 6px 0', 'lineHeight': '1.5',
-            }),
-            html.Div([
-                html.Span(f"Price: {item['price']:.2f}p",
-                          style={'color': MUTED, 'fontSize': '11px', 'marginRight': '14px'}),
-                html.Span(f"RSI: {item['rsi']:.1f}",
-                          style={'color': MUTED, 'fontSize': '11px', 'marginRight': '14px'}),
-                html.Span(f"vs SMA20: {item['pct20']:+.1f}%",
-                          style={'color': MUTED, 'fontSize': '11px', 'marginRight': '14px'}),
-                html.Span(f"Detected: {item['time']}",
-                          style={'color': MUTED, 'fontSize': '11px'}),
-            ]),
-        ], style={
-            'background': bg,
-            'border':     f'1px solid {color}',
-            'borderLeft': f'4px solid {color}',
-            'borderRadius': '8px',
-            'padding':    '14px 16px',
-            'marginBottom': '8px',
-            'boxShadow':  f'0 0 18px {glow}',
-        }))
-
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Span(f'NEW {rec_type} SIGNAL', style={
-                    'color': color, 'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '1px',
-                }),
-                html.Span(f'  ·  {label}', style={'color': MUTED, 'fontSize': '11px'}),
-            ]),
-            html.Button('Dismiss', id=dismiss_id, n_clicks=0, style={
-                'background': 'transparent', 'border': f'1px solid {BORDER}',
-                'color': MUTED, 'padding': '3px 12px', 'borderRadius': '4px',
-                'cursor': 'pointer', 'fontFamily': 'monospace', 'fontSize': '11px',
-            }),
-        ], style={'display': 'flex', 'justifyContent': 'space-between',
-                  'alignItems': 'center', 'marginBottom': '10px'}),
-        *cards,
-    ], style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '12px 16px 4px'})
-
-
-@app.callback(
-    Output('sell-alert-banner', 'children'),
-    Input('sell-trigger', 'data'),
-)
-def render_sell_banner(triggered):
-    return _alert_banner(triggered, 'SELL')
-
-
-@app.callback(
-    Output('sell-trigger', 'data', allow_duplicate=True),
-    Input('dismiss-sell-btn', 'n_clicks'),
-    prevent_initial_call=True,
-)
-def dismiss_sell_alert(_):
-    return []
-
-
-# ── Browser notifications (clientside) ───────────────────────────────────────
-def _notify_js(signal_type):
-    return f"""
-    function(triggered) {{
-        if (!triggered || triggered.length === 0)
-            return window.dash_clientside.no_update;
-        if (!('Notification' in window)) return '';
-        function doNotify() {{
-            triggered.forEach(function(item) {{
-                new Notification('{signal_type} Signal: ' + item.etf, {{
-                    body: item.reason, tag: 'isa-' + item.etf + '-{signal_type.lower()}',
-                }});
-            }});
-        }}
-        if (Notification.permission === 'granted') {{
-            doNotify();
-        }} else if (Notification.permission === 'default') {{
-            Notification.requestPermission().then(function(p) {{
-                if (p === 'granted') doNotify();
-            }});
-        }}
-        return '';
-    }}
-    """
-
-app.clientside_callback(
-    _notify_js('BUY'),
-    Output('notif-dummy', 'children'),
-    Input('buy-trigger', 'data'),
-)
-
-app.clientside_callback(
-    _notify_js('SELL'),
-    Output('notif-sell-dummy', 'children'),
-    Input('sell-trigger', 'data'),
-)
-
-
-# ── Test alert callbacks ──────────────────────────────────────────────────────
-@app.callback(
-    Output('buy-trigger', 'data', allow_duplicate=True),
-    Input('test-alert-btn', 'n_clicks'),
-    prevent_initial_call=True,
-)
-def test_buy_alert(_):
-    return [{
-        'etf': 'IWMO', 'name': ETF_NAMES['IWMO'],
-        'price': 2547.50, 'rsi': 28.3, 'pct20': -3.1,
-        'reason': ('RSI is deeply oversold at 28 and price sits 3.1% below its '
-                   '20-day average, pointing to a high-probability bounce entry.'),
-        'time': datetime.now().strftime('%H:%M'),
-    }]
-
-
-@app.callback(
-    Output('sell-trigger', 'data', allow_duplicate=True),
-    Input('test-sell-btn', 'n_clicks'),
-    prevent_initial_call=True,
-)
-def test_sell_alert(_):
-    return [{
-        'etf': 'WTAI', 'name': ETF_NAMES['WTAI'],
-        'price': 1823.40, 'rsi': 74.6, 'pct20': 11.2,
-        'reason': ('RSI is overbought at 75 and price has extended 11.2% above its '
-                   '50-day average — the rally looks stretched and a pullback is likely.'),
-        'time': datetime.now().strftime('%H:%M'),
-    }]
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
