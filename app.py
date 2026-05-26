@@ -17,9 +17,9 @@ ETFS = ['IWMO', 'JEDG', 'SEMG', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
     'IWMO': 'iShares MSCI World Momentum',
-    'JEDG': 'VanEck Space Innovators',
+    'JEDG': 'VanEck Space Innovators UCITS ETF',
     'SEMG': 'iShares MSCI EM IMI ESG Screened',
-    'VDPG': 'Vanguard FTSE Dev World',
+    'VDPG': 'Vanguard FTSE Dev Asia Pac ex-JP',
     'WTAI': 'WisdomTree AI',
     'SGLS': 'Invesco Physical Gold GBP Hedged',
     'FLXK': 'Franklin FTSE Korea',
@@ -56,8 +56,38 @@ SIG_DESC   = {
     'SELL': 'Overbought / extended — avoid chasing, wait for pullback',
 }
 REC_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
-ROW_TINT   = {'BUY': 'rgba(63,185,80,0.06)', 'HOLD': 'transparent', 'SELL': 'rgba(248,81,73,0.06)'}
 CONVICTION_COLOR = {'HIGH': GREEN, 'MED': YELLOW, 'LOW': MUTED}
+
+_ACTION_TEXT = {
+    ('BUY',  'HIGH'): 'Add full position at SMA20',
+    ('BUY',  'MED'):  'Add partial — await confirmation',
+    ('BUY',  'LOW'):  'Monitor — entry on pullback',
+    ('HOLD', 'MED'):  'Watch — potential setup forming',
+    ('HOLD', 'LOW'):  'Hold — no new entries',
+    ('SELL', 'HIGH'): 'Exit / reduce position now',
+    ('SELL', 'MED'):  'Trim on strength',
+    ('SELL', 'LOW'):  'Hold — avoid adding here',
+}
+
+
+def get_action_text(rec: str, conviction: str) -> str:
+    return _ACTION_TEXT.get((rec, conviction), 'Hold — monitor')
+
+
+def get_row_tint(rec: str, conviction: str) -> str:
+    if rec == 'BUY':
+        if conviction == 'HIGH':
+            return 'rgba(63,185,80,0.10)'
+        if conviction == 'MED':
+            return 'rgba(63,185,80,0.06)'
+        return 'rgba(63,185,80,0.03)'
+    if rec == 'SELL':
+        if conviction == 'HIGH':
+            return 'rgba(248,81,73,0.12)'
+        return 'rgba(248,81,73,0.05)'
+    if rec == 'HOLD' and conviction == 'MED':
+        return 'rgba(88,166,255,0.06)'
+    return 'transparent'
 
 TAB_STYLE = {
     'background': BG, 'color': MUTED, 'border': 'none',
@@ -532,7 +562,7 @@ def _macro_threshold_reference() -> html.Div:
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     period_label = 'Wk %' if show_week else 'Day %'
-    headers = ['ETF', f'Price · {period_label}', 'Volume', 'Conviction', 'Action', 'Entry', 'RSI 14', 'SMA 20 / 50', 'Signal Changed']
+    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'SIGNAL CHANGED']
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
@@ -550,11 +580,26 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 html.Td('No data', colSpan=8, style={**TD_STYLE, 'color': MUTED}),
             ], style={'borderBottom': f'1px solid {BORDER}'})
         else:
-            rec       = data['rec']
-            chg_pct   = data['week_chg_pct'] if show_week else data['chg_pct']
-            chg_color = GREEN if chg_pct >= 0 else RED
-            arrow     = '+' if chg_pct >= 0 else ''
-            row_bg    = ROW_TINT.get(rec, 'transparent')
+            rec        = data['rec']
+            conv       = data['conviction']
+            chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
+            chg_color  = GREEN if chg_pct >= 0 else RED
+            arrow      = '+' if chg_pct >= 0 else ''
+            row_bg     = get_row_tint(rec, conv)
+            conv_color = CONVICTION_COLOR[conv]
+            rec_color  = REC_COLOR[rec]
+
+            # ETF name cell — WTAI gets AIAG.L proxy note
+            etf_name_children = [
+                html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
+                html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+            ]
+            if etf == 'WTAI':
+                etf_name_children.append(html.Div(
+                    'vol: AIAG.L',
+                    style={'color': MUTED, 'fontSize': '10px', 'fontStyle': 'italic', 'marginTop': '2px'},
+                ))
+            etf_cell = html.Td(etf_name_children, style=TD_STYLE)
 
             # Volume cell
             vr = data.get('vol_ratio')
@@ -572,9 +617,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 vol_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
             # Conviction cell
-            conv       = data['conviction']
-            conv_color = CONVICTION_COLOR[conv]
-            conv_cell  = html.Td(
+            conv_cell = html.Td(
                 html.Span(conv, style={
                     'background': conv_color + '22', 'color': conv_color,
                     'border': f'1px solid {conv_color}',
@@ -584,19 +627,15 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 style=TD_STYLE,
             )
 
-            # Action cell
-            rec_color   = REC_COLOR[rec]
+            # Action cell — specific instruction text
             action_cell = html.Td(
-                html.Span(rec, style={
-                    'background': rec_color + '22', 'color': rec_color,
-                    'border': f'1px solid {rec_color}',
-                    'padding': '3px 12px', 'borderRadius': '20px',
-                    'fontWeight': '700', 'fontSize': '12px', 'letterSpacing': '0.5px',
+                html.Div(get_action_text(rec, conv), style={
+                    'color': rec_color, 'fontSize': '12px', 'fontWeight': '600',
                 }),
                 style=TD_STYLE,
             )
 
-            # Entry cell
+            # Entry AT cell
             if rec == 'BUY':
                 entry_val   = f'{data["sma20"]:.2f}'
                 entry_sub   = 'near SMA20'
@@ -614,7 +653,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 html.Div(entry_sub, style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
             ], style=TD_STYLE)
 
-            # RSI cell
+            # RSI 14 cell
             rsi_val   = data['rsi']
             rsi_color = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
             rsi_cell  = html.Td(
@@ -622,7 +661,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 style=TD_STYLE,
             )
 
-            # SMA combined cell
+            # SMA POSITION cell
             vs20_color = GREEN if data['vs20'] == 'Above' else RED
             vs50_color = GREEN if data['vs50'] == 'Above' else RED
             sma_cell   = html.Td([
@@ -646,10 +685,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             )
 
             tr = html.Tr([
-                html.Td([
-                    html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
-                    html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-                ], style=TD_STYLE),
+                etf_cell,
                 html.Td([
                     html.Span(f'{data["close"]:.2f}', style={'color': TEXT, 'fontWeight': '700'}),
                     html.Br(),
@@ -664,6 +700,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 changed_cell,
             ], style={
                 'background': row_bg,
+                'borderLeft': f'4px solid {conv_color}',
                 'transition': 'background 0.15s',
                 'borderBottom': f'1px solid {BORDER}',
             })
@@ -1053,7 +1090,11 @@ def update_chart(etf, tf, _):
     sma50   = float(sma50_s.iloc[-1]) if not sma50_s.empty else close
     signal  = get_signal(rsi, close, sma20, sma50)
 
-    if has_volume:
+    # Determine volume source
+    wtai_volume = etf == 'WTAI'
+    show_volume = has_volume or wtai_volume
+
+    if show_volume:
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
                             row_heights=[0.55, 0.25, 0.20], vertical_spacing=0.03)
     else:
@@ -1085,7 +1126,28 @@ def update_chart(etf, tf, _):
         for level, lcolor in [(70, RED), (30, GREEN), (50, BORDER)]:
             fig.add_hline(y=level, line_dash='dot', line_color=lcolor, line_width=1, row=2, col=1)
 
-    if has_volume and 'Volume' in display_df.columns:
+    if wtai_volume:
+        proxy_df = fetch_data(WTAI_VOL_PROXY, max(days, _INDICATOR_DAYS))
+        if not proxy_df.empty:
+            proxy_disp = proxy_df[proxy_df.index >= cutoff]
+            if proxy_disp.empty:
+                proxy_disp = proxy_df.tail(20)
+            vol_colors = [
+                GREEN if float(r['Close']) >= float(r['Open']) else RED
+                for _, r in proxy_disp.iterrows()
+            ]
+            fig.add_trace(go.Bar(
+                x=proxy_disp.index, y=proxy_disp['Volume'],
+                name='Volume (AIAG.L)', marker_color=vol_colors, opacity=0.65,
+            ), row=3, col=1)
+            avg_proxy = proxy_df['Volume'].rolling(20).mean()
+            avg_proxy_disp = avg_proxy[avg_proxy.index >= cutoff].dropna()
+            if not avg_proxy_disp.empty:
+                fig.add_trace(go.Scatter(
+                    x=avg_proxy_disp.index, y=avg_proxy_disp, name='Avg Vol 20d',
+                    line=dict(color=YELLOW, width=1.2, dash='dot'),
+                ), row=3, col=1)
+    elif has_volume and 'Volume' in display_df.columns:
         vol_colors = [
             GREEN if float(row['Close']) >= float(row['Open']) else RED
             for _, row in display_df.iterrows()
@@ -1102,7 +1164,7 @@ def update_chart(etf, tf, _):
                 line=dict(color=YELLOW, width=1.2, dash='dot'),
             ), row=3, col=1)
 
-    chart_height = 460 if has_volume else 400
+    chart_height = 460 if show_volume else 400
     fig.update_layout(
         template='plotly_dark', paper_bgcolor=CARD, plot_bgcolor=CARD,
         font=dict(family='monospace', color=TEXT, size=11),
@@ -1114,8 +1176,9 @@ def update_chart(etf, tf, _):
     fig.update_yaxes(gridcolor=BORDER, zeroline=False)
     fig.update_yaxes(title_text='Price (p)', row=1, col=1, title_font_size=10)
     fig.update_yaxes(title_text='RSI',       row=2, col=1, range=[0, 100], title_font_size=10)
-    if has_volume:
-        fig.update_yaxes(title_text='Volume', row=3, col=1, title_font_size=10)
+    if show_volume:
+        vol_label = 'Vol (AIAG.L)' if wtai_volume else 'Volume'
+        fig.update_yaxes(title_text=vol_label, row=3, col=1, title_font_size=10)
 
     arrow    = '+' if chg >= 0 else ''
     c_color  = GREEN if chg >= 0 else RED
