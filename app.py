@@ -35,6 +35,8 @@ RS_BENCHMARKS = {
     'WTAI': ('EQQQ.L', 'mul'),
     'JEDG': ('UFO',    'div'),
     'SGLS': ('GC=F',   'div'),
+    'VDPG': ('VAPX.L', None),
+    'FLXK': ('EWY',    None),
 }
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
 _INDICATOR_DAYS = 365
