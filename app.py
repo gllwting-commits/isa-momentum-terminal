@@ -196,6 +196,12 @@ def fetch_data(ticker: str, days: int) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+    try:
+        if yf.Ticker(ticker).fast_info.currency == 'GBp':
+            for col in ('Open', 'High', 'Low', 'Close'):
+                df[col] = df[col] / 100
+    except Exception:
+        pass
     df['SMA20'] = df['Close'].rolling(20).mean()
     df['SMA50'] = df['Close'].rolling(50).mean()
     df['RSI']   = compute_rsi(df['Close'])
