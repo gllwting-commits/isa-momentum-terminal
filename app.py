@@ -743,8 +743,8 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
             if rs_trend is not None:
-                arrow = '↑' if rs_trend > 0.5 else ('↓' if rs_trend < -0.5 else '→')
-                color = GREEN if rs_trend > 0.5 else (RED if rs_trend < -0.5 else YELLOW)
+                arrow = '↑' if rs_trend > 1.5 else ('↓' if rs_trend < -1.5 else '→')
+                color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
                 sign  = '+' if rs_trend >= 0 else ''
                 rs_cell = html.Td([
                     html.Div(f'{arrow} {sign}{rs_trend:.1f}%', style={'color': color, 'fontWeight': '700', 'fontSize': '13px'}),
