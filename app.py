@@ -16,12 +16,12 @@ from plotly.subplots import make_subplots
 ETFS = ['IWMO', 'JEDG', 'SEMG', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
-    'IWMO': 'iShares MSCI World Momentum',
+    'IWMO': 'iShares Edge MSCI World Momentum Factor UCITS ETF',
     'JEDG': 'VanEck Space Innovators UCITS ETF',
-    'SEMG': 'iShares MSCI EM IMI ESG Screened',
+    'SEMG': 'Amundi MSCI Semiconductors ESG Screened UCITS ETF',
     'VDPG': 'Vanguard FTSE Dev Asia Pac ex-JP',
     'WTAI': 'WisdomTree AI',
-    'SGLS': 'Invesco Physical Gold GBP Hedged',
+    'SGLS': 'Invesco Physical Gold ETC (GBP Hedged)',
     'FLXK': 'Franklin FTSE Korea',
 }
 VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'FLXK']
