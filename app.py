@@ -270,10 +270,23 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     df = fetch_data(ticker, _INDICATOR_DAYS)
     if df.empty:
         return None
-    close = float(df['Close'].iloc[-1])
-    prev  = float(df['Close'].iloc[-2]) if len(df) > 1 else close
 
-    # Weekly change — first close in current ISO week
+    # Use fast_info for live price, previous close, and 52W high —
+    # avoids stale EOD data (yfinance daily bars lag by 1 session)
+    try:
+        fi  = yf.Ticker(ticker).fast_info
+        div = 100 if fi.currency == 'GBp' else 1
+        close    = float(fi.last_price)     / div
+        prev     = float(fi.previous_close) / div
+        high_52w = float(fi.year_high)      / div
+    except Exception:
+        close    = float(df['Close'].iloc[-1])
+        prev     = float(df['Close'].iloc[-2]) if len(df) > 1 else close
+        high_52w = float(df['Close'].tail(252).max())
+
+    drawdown = (close / high_52w - 1) * 100 if high_52w else None
+
+    # Weekly change — first close in current ISO week (from historical df)
     last_date  = df.index[-1]
     week_start = last_date - pd.Timedelta(days=last_date.dayofweek)
     week_df    = df[df.index >= week_start]
@@ -303,9 +316,6 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
         vol_ratio = _compute_vol_ratio(proxy_df)
         if vol_ratio is not None:
             proxy_label = vol_proxy
-
-    high_52w   = float(df['Close'].tail(252).max())
-    drawdown   = (close / high_52w - 1) * 100 if high_52w else None
 
     return {
         'close': close, 'chg_pct': chg_pct, 'week_chg_pct': week_chg_pct,
