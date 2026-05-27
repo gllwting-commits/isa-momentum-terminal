@@ -236,20 +236,25 @@ def _get_gbpusd() -> float:
 
 
 def fetch_rs_ratio(etf: str) -> float | None:
+    """Return 30-day % change of the ETF/benchmark RS ratio series.
+    FX is a constant multiplier that cancels in ratio_today/ratio_30d_ago."""
     if etf not in RS_BENCHMARKS:
         return None
-    bench_ticker, fx = RS_BENCHMARKS[etf]
+    bench_ticker, _ = RS_BENCHMARKS[etf]
     etf_df   = fetch_data(TICKERS[etf], 30)
     bench_df = fetch_data(bench_ticker, 30)
     if etf_df.empty or bench_df.empty:
         return None
-    etf_close   = float(etf_df['Close'].iloc[-1])
-    bench_close = float(bench_df['Close'].iloc[-1])
-    if fx == 'div':
-        bench_close = bench_close / _get_gbpusd()
-    elif fx == 'mul':
-        bench_close = bench_close * _get_gbpusd()
-    return etf_close / bench_close if bench_close else None
+    combined = pd.DataFrame({
+        'etf':   etf_df['Close'],
+        'bench': bench_df['Close'],
+    }).dropna()
+    cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
+    window = combined[combined.index >= cutoff]
+    if len(window) < 2:
+        return None
+    rs = window['etf'] / window['bench']
+    return (rs.iloc[-1] / rs.iloc[0] - 1) * 100
 
 
 def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
@@ -612,7 +617,7 @@ def _macro_threshold_reference() -> html.Div:
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     period_label = 'Wk %' if show_week else 'Day %'
-    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'RS RATIO', 'SIGNAL CHANGED']
+    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'RS TREND 30d', 'SIGNAL CHANGED']
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
@@ -734,12 +739,15 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 style=TD_STYLE,
             )
 
-            # RS ratio cell
-            rs = data.get('rs_ratio')
+            # RS trend cell
+            rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
-            if rs is not None:
+            if rs_trend is not None:
+                arrow = '↑' if rs_trend > 0.5 else ('↓' if rs_trend < -0.5 else '→')
+                color = GREEN if rs_trend > 0.5 else (RED if rs_trend < -0.5 else YELLOW)
+                sign  = '+' if rs_trend >= 0 else ''
                 rs_cell = html.Td([
-                    html.Div(f'{rs:.4f}', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                    html.Div(f'{arrow} {sign}{rs_trend:.1f}%', style={'color': color, 'fontWeight': '700', 'fontSize': '13px'}),
                     html.Div(f'vs {bench_label}', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE)
             else:
