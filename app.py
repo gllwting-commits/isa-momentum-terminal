@@ -286,7 +286,8 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     rsi_s = df['RSI'].dropna()
     s20_s = df['SMA20'].dropna()
     s50_s = df['SMA50'].dropna()
-    rsi   = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
+    rsi        = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
+    rsi_change = float(rsi_s.iloc[-1] - rsi_s.iloc[-11]) if len(rsi_s) >= 11 else None
     sma20 = float(s20_s.iloc[-1]) if not s20_s.empty else close
     sma50 = float(s50_s.iloc[-1]) if not s50_s.empty else close
     chg_pct = (close - prev) / prev * 100 if prev else 0.0
@@ -314,7 +315,7 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
         'vs50': 'Above' if close >= sma50 else 'Below',
         'pct20': pct20, 'pct50': pct50,
         'rec': rec, 'reason': reason, 'conviction': conviction,
-        'drawdown': drawdown,
+        'drawdown': drawdown, 'rsi_change': rsi_change,
     }
 
 
@@ -713,10 +714,19 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             ], style=TD_STYLE)
 
             # RSI 14 cell
-            rsi_val   = data['rsi']
-            rsi_color = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
-            rsi_cell  = html.Td(
-                html.Span(f'{rsi_val:.1f}', style={'color': rsi_color, 'fontWeight': '600'}),
+            rsi_val    = data['rsi']
+            rsi_color  = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
+            rsi_chg    = data.get('rsi_change')
+            rsi_chg_el = []
+            if rsi_chg is not None:
+                chg_sign  = '+' if rsi_chg >= 0 else ''
+                chg_color = GREEN if rsi_chg > 0 else (RED if rsi_chg < 0 else MUTED)
+                rsi_chg_el = [html.Span(
+                    f'  {chg_sign}{rsi_chg:.1f}',
+                    style={'color': chg_color, 'fontSize': '10px'},
+                )]
+            rsi_cell = html.Td(
+                [html.Span(f'{rsi_val:.1f}', style={'color': rsi_color, 'fontWeight': '600'})] + rsi_chg_el,
                 style=TD_STYLE,
             )
 
