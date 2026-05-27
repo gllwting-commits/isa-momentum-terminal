@@ -34,7 +34,7 @@ RS_BENCHMARKS = {
     'IWMO': ('SWDA.L', 'mul'),
     'WTAI': ('EQQQ.L', 'mul'),
     'JEDG': ('UFO',    'div'),
-    'SGLS': ('GC=F',   'div'),
+    'SGLS': ('IGLN.L', 'div'),
     'VDPG': ('VAPX.L', None),
     'FLXK': ('EWY',    None),
 }
