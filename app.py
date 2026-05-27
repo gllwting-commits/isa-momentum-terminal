@@ -271,14 +271,17 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     if df.empty:
         return None
 
-    # Use fast_info for live price, previous close, and 52W high —
-    # avoids stale EOD data (yfinance daily bars lag by 1 session)
+    # Use fast_info for live price/prev close; period='1y' for 52W max close
+    # (fast_info.year_high is intraday — closing-price max is more accurate)
     try:
         fi  = yf.Ticker(ticker).fast_info
         div = 100 if fi.currency == 'GBp' else 1
-        close    = float(fi.last_price)     / div
-        prev     = float(fi.previous_close) / div
-        high_52w = float(fi.year_high)      / div
+        close = float(fi.last_price)     / div
+        prev  = float(fi.previous_close) / div
+        _1y   = yf.download(ticker, period='1y', progress=False, auto_adjust=True)
+        if isinstance(_1y.columns, pd.MultiIndex):
+            _1y.columns = _1y.columns.droplevel(1)
+        high_52w = float(_1y['Close'].dropna().max()) / div
     except Exception:
         close    = float(df['Close'].iloc[-1])
         prev     = float(df['Close'].iloc[-2]) if len(df) > 1 else close
@@ -653,7 +656,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rec        = data['rec']
             conv       = data['conviction']
             chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
-            chg_color  = GREEN if chg_pct >= 0 else RED
+            chg_color  = GREEN if chg_pct > 1.5 else (RED if chg_pct < -1.5 else YELLOW)
             arrow      = '+' if chg_pct >= 0 else ''
             row_bg     = get_row_tint(rec, conv)
             conv_color = CONVICTION_COLOR[conv]
@@ -730,7 +733,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rsi_chg_el = []
             if rsi_chg is not None:
                 chg_sign  = '+' if rsi_chg >= 0 else ''
-                chg_color = GREEN if rsi_chg > 0 else (RED if rsi_chg < 0 else YELLOW)
+                chg_color = GREEN if rsi_chg > 1.5 else (RED if rsi_chg < -1.5 else YELLOW)
                 rsi_chg_el = [html.Span(
                     f'  {chg_sign}{rsi_chg:.1f}',
                     style={'color': chg_color, 'fontSize': '10px'},
@@ -766,7 +769,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             # 52W drawdown cell
             dd = data.get('drawdown')
             if dd is not None:
-                dd_color = RED if dd < -10 else (YELLOW if dd < -5 else GREEN)
+                dd_color = GREEN if dd > 1.5 else (RED if dd < -1.5 else YELLOW)
                 dd_cell  = html.Td(
                     html.Span(f'{dd:.1f}%', style={'color': dd_color, 'fontWeight': '700', 'fontSize': '13px'}),
                     style=TD_STYLE,
@@ -778,8 +781,8 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
             if rs_trend is not None:
-                arrow = '↑' if rs_trend > 0 else ('↓' if rs_trend < 0 else '→')
-                color = GREEN if rs_trend > 0 else (RED if rs_trend < 0 else YELLOW)
+                arrow = '↑' if rs_trend > 1.5 else ('↓' if rs_trend < -1.5 else '→')
+                color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
                 sign  = '+' if rs_trend >= 0 else ''
                 rs_cell = html.Td([
                     html.Div(f'{arrow} {sign}{rs_trend:.1f}%', style={'color': color, 'fontWeight': '700', 'fontSize': '13px'}),
