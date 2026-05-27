@@ -26,6 +26,16 @@ ETF_NAMES = {
 }
 VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'FLXK']
 WTAI_VOL_PROXY = 'AIAG.L'
+# RS ratio pairs: etf → (benchmark_ticker, fx)
+# fx='div': bench is USD, ETF is GBP → bench_gbp = bench_usd / GBPUSD
+# fx='mul': bench is GBP, ETF is USD → bench_usd = bench_gbp * GBPUSD
+RS_BENCHMARKS = {
+    'SEMG': ('SOXX',   'div'),
+    'IWMO': ('SWDA.L', 'mul'),
+    'WTAI': ('EQQQ.L', 'mul'),
+    'JEDG': ('UFO',    'div'),
+    'SGLS': ('GC=F',   'div'),
+}
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
 _INDICATOR_DAYS = 365
 ISA_ALLOWANCE  = 20_000
@@ -206,6 +216,38 @@ def fetch_data(ticker: str, days: int) -> pd.DataFrame:
     df['SMA50'] = df['Close'].rolling(50).mean()
     df['RSI']   = compute_rsi(df['Close'])
     return df
+
+
+_gbpusd_cache: dict = {}
+
+def _get_gbpusd() -> float:
+    now = datetime.now()
+    cached = _gbpusd_cache.get('rate')
+    if cached and (now - _gbpusd_cache['ts']).seconds < 300:
+        return cached
+    try:
+        rate = float(yf.Ticker('GBPUSD=X').fast_info.last_price)
+        _gbpusd_cache.update({'rate': rate, 'ts': now})
+        return rate
+    except Exception:
+        return cached or 1.34
+
+
+def fetch_rs_ratio(etf: str) -> float | None:
+    if etf not in RS_BENCHMARKS:
+        return None
+    bench_ticker, fx = RS_BENCHMARKS[etf]
+    etf_df   = fetch_data(TICKERS[etf], 30)
+    bench_df = fetch_data(bench_ticker, 30)
+    if etf_df.empty or bench_df.empty:
+        return None
+    etf_close   = float(etf_df['Close'].iloc[-1])
+    bench_close = float(bench_df['Close'].iloc[-1])
+    if fx == 'div':
+        bench_close = bench_close / _get_gbpusd()
+    elif fx == 'mul':
+        bench_close = bench_close * _get_gbpusd()
+    return etf_close / bench_close if bench_close else None
 
 
 def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
@@ -568,7 +610,7 @@ def _macro_threshold_reference() -> html.Div:
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     period_label = 'Wk %' if show_week else 'Day %'
-    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'SIGNAL CHANGED']
+    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'RS RATIO', 'SIGNAL CHANGED']
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
@@ -583,7 +625,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                     html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE),
-                html.Td('No data', colSpan=8, style={**TD_STYLE, 'color': MUTED}),
+                html.Td('No data', colSpan=9, style={**TD_STYLE, 'color': MUTED}),
             ], style={'borderBottom': f'1px solid {BORDER}'})
         else:
             rec        = data['rec']
@@ -690,6 +732,17 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 style=TD_STYLE,
             )
 
+            # RS ratio cell
+            rs = data.get('rs_ratio')
+            bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
+            if rs is not None:
+                rs_cell = html.Td([
+                    html.Div(f'{rs:.4f}', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+                    html.Div(f'vs {bench_label}', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+                ], style=TD_STYLE)
+            else:
+                rs_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+
             tr = html.Tr([
                 etf_cell,
                 html.Td([
@@ -703,6 +756,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 entry_cell,
                 rsi_cell,
                 sma_cell,
+                rs_cell,
                 changed_cell,
             ], style={
                 'background': row_bg,
@@ -996,6 +1050,8 @@ def update_signal_summary(tab, _, price_period):
         # Clear volume for ETFs not in VOLUME_ETFS and not WTAI
         if data and etf not in VOLUME_ETFS and etf != 'WTAI':
             data['vol_ratio'] = None
+        if data:
+            data['rs_ratio'] = fetch_rs_ratio(etf)
         sig_changed = _update_signal_history(etf, data['rec']) if data else '—'
         rows.append({'etf': etf, 'data': data, 'sig_changed': sig_changed})
 
