@@ -303,6 +303,9 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
         if vol_ratio is not None:
             proxy_label = vol_proxy
 
+    high_52w   = float(df['Close'].tail(252).max())
+    drawdown   = (close / high_52w - 1) * 100 if high_52w else None
+
     return {
         'close': close, 'chg_pct': chg_pct, 'week_chg_pct': week_chg_pct,
         'vol_ratio': vol_ratio, 'vol_proxy': proxy_label,
@@ -311,6 +314,7 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
         'vs50': 'Above' if close >= sma50 else 'Below',
         'pct20': pct20, 'pct50': pct50,
         'rec': rec, 'reason': reason, 'conviction': conviction,
+        'drawdown': drawdown,
     }
 
 
@@ -617,7 +621,7 @@ def _macro_threshold_reference() -> html.Div:
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     period_label = 'Wk %' if show_week else 'Day %'
-    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', 'RS TREND 30d', 'SIGNAL CHANGED']
+    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', '52W DRAWDOWN', 'RS TREND 30d', 'SIGNAL CHANGED']
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
@@ -632,7 +636,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                     html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE),
-                html.Td('No data', colSpan=9, style={**TD_STYLE, 'color': MUTED}),
+                html.Td('No data', colSpan=10, style={**TD_STYLE, 'color': MUTED}),
             ], style={'borderBottom': f'1px solid {BORDER}'})
         else:
             rec        = data['rec']
@@ -739,6 +743,17 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 style=TD_STYLE,
             )
 
+            # 52W drawdown cell
+            dd = data.get('drawdown')
+            if dd is not None:
+                dd_color = RED if dd < -10 else (YELLOW if dd < -5 else GREEN)
+                dd_cell  = html.Td(
+                    html.Span(f'{dd:.1f}%', style={'color': dd_color, 'fontWeight': '700', 'fontSize': '13px'}),
+                    style=TD_STYLE,
+                )
+            else:
+                dd_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+
             # RS trend cell
             rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
@@ -766,6 +781,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 entry_cell,
                 rsi_cell,
                 sma_cell,
+                dd_cell,
                 rs_cell,
                 changed_cell,
             ], style={
