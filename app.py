@@ -720,7 +720,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rsi_chg_el = []
             if rsi_chg is not None:
                 chg_sign  = '+' if rsi_chg >= 0 else ''
-                chg_color = GREEN if rsi_chg > 0 else (RED if rsi_chg < 0 else MUTED)
+                chg_color = GREEN if rsi_chg > 0 else (RED if rsi_chg < 0 else YELLOW)
                 rsi_chg_el = [html.Span(
                     f'  {chg_sign}{rsi_chg:.1f}',
                     style={'color': chg_color, 'fontSize': '10px'},
@@ -768,8 +768,8 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
             if rs_trend is not None:
-                arrow = '↑' if rs_trend > 1.5 else ('↓' if rs_trend < -1.5 else '→')
-                color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
+                arrow = '↑' if rs_trend > 0 else ('↓' if rs_trend < 0 else '→')
+                color = GREEN if rs_trend > 0 else (RED if rs_trend < 0 else YELLOW)
                 sign  = '+' if rs_trend >= 0 else ''
                 rs_cell = html.Td([
                     html.Div(f'{arrow} {sign}{rs_trend:.1f}%', style={'color': color, 'fontWeight': '700', 'fontSize': '13px'}),
