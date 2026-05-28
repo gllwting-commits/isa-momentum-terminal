@@ -271,20 +271,17 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     if df.empty:
         return None
 
-    # Use fast_info for live price/prev close; period='1y' for 52W max close
-    # (fast_info.year_high is intraday — closing-price max is more accurate)
+    # close/prev from df (already GBp-converted by fetch_data); 52W high from period='1y' download
+    close = float(df['Close'].iloc[-1])
+    prev  = float(df['Close'].iloc[-2]) if len(df) > 1 else close
     try:
-        fi  = yf.Ticker(ticker).fast_info
-        div = 100 if fi.currency == 'GBp' else 1
-        close = float(fi.last_price)     / div
-        prev  = float(fi.previous_close) / div
-        _1y   = yf.download(ticker, period='1y', progress=False, auto_adjust=True)
+        fi   = yf.Ticker(ticker).fast_info
+        div  = 100 if fi.currency == 'GBp' else 1
+        _1y  = yf.download(ticker, period='1y', progress=False, auto_adjust=True)
         if isinstance(_1y.columns, pd.MultiIndex):
             _1y.columns = _1y.columns.droplevel(1)
         high_52w = float(_1y['Close'].dropna().max()) / div
     except Exception:
-        close    = float(df['Close'].iloc[-1])
-        prev     = float(df['Close'].iloc[-2]) if len(df) > 1 else close
         high_52w = float(df['Close'].tail(252).max())
 
     drawdown = (close / high_52w - 1) * 100 if high_52w else None
@@ -769,7 +766,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             # 52W drawdown cell
             dd = data.get('drawdown')
             if dd is not None:
-                dd_color = GREEN if dd > 1.5 else (RED if dd < -1.5 else YELLOW)
+                dd_color = GREEN if dd > -5 else (RED if dd < -10 else YELLOW)
                 dd_cell  = html.Td(
                     html.Span(f'{dd:.1f}%', style={'color': dd_color, 'fontWeight': '700', 'fontSize': '13px'}),
                     style=TD_STYLE,
