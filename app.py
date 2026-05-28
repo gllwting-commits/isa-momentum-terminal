@@ -1,7 +1,8 @@
 import json
 import os
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
+from zoneinfo import ZoneInfo
 from flask import redirect, request, session
 
 import dash
@@ -235,22 +236,115 @@ def _get_gbpusd() -> float:
         return cached or 1.34
 
 
+# ── London market hours ───────────────────────────────────────────────────────
+_LONDON_TZ    = ZoneInfo('Europe/London')
+_MARKET_OPEN  = dt_time(8,  0)
+_MARKET_CLOSE = dt_time(16, 35)
+
+
+def _is_market_open() -> bool:
+    now = datetime.now(_LONDON_TZ)
+    if now.weekday() >= 5:
+        return False
+    return _MARKET_OPEN <= now.time() <= _MARKET_CLOSE
+
+
+# ── Daily data cache (refreshes once per calendar day) ────────────────────────
+_daily_cache: dict = {}
+
+
+def _get_daily_df(ticker: str) -> pd.DataFrame:
+    """1y daily OHLCV + SMA/RSI, cached per calendar day."""
+    today  = datetime.today().date()
+    cached = _daily_cache.get(ticker)
+    if cached and cached['date'] == today:
+        return cached['df']
+    df = yf.download(ticker, period='1y', progress=False, auto_adjust=True)
+    if not df.empty:
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        try:
+            if yf.Ticker(ticker).fast_info.currency == 'GBp':
+                for col in ('Open', 'High', 'Low', 'Close'):
+                    df[col] = df[col] / 100
+        except Exception:
+            pass
+        df['SMA20'] = df['Close'].rolling(20).mean()
+        df['SMA50'] = df['Close'].rolling(50).mean()
+        df['RSI']   = compute_rsi(df['Close'])
+    _daily_cache[ticker] = {'date': today, 'ts': datetime.now(), 'df': df}
+    return df
+
+
+def fetch_daily(ticker: str) -> dict | None:
+    """RSI, SMA20/50, drawdown — cached per calendar day, fetched once at startup."""
+    df = _get_daily_df(ticker)
+    if df.empty:
+        return None
+    rsi_s      = df['RSI'].dropna()
+    s20_s      = df['SMA20'].dropna()
+    s50_s      = df['SMA50'].dropna()
+    close_eod  = float(df['Close'].iloc[-1])
+    prev_eod   = float(df['Close'].iloc[-2]) if len(df) > 1 else close_eod
+    sma20      = float(s20_s.iloc[-1]) if not s20_s.empty else close_eod
+    sma50      = float(s50_s.iloc[-1]) if not s50_s.empty else close_eod
+    rsi        = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
+    rsi_change = float(rsi_s.iloc[-1] - rsi_s.iloc[-11]) if len(rsi_s) >= 11 else None
+    high_52w   = float(df['Close'].max())
+    drawdown   = (close_eod / high_52w - 1) * 100 if high_52w else None
+    vol_20d_avg = float(df['Volume'].iloc[max(-21, -len(df)):-1].mean()) if len(df) >= 3 else None
+    return {
+        'rsi': rsi, 'rsi_change': rsi_change,
+        'sma20': sma20, 'sma50': sma50,
+        'drawdown': drawdown,
+        'close_eod': close_eod, 'prev_eod': prev_eod,
+        'vol_20d_avg': vol_20d_avg,
+        'cached_at': _daily_cache[ticker]['ts'].strftime('%H:%M'),
+    }
+
+
+def fetch_intraday(ticker: str, daily: dict) -> dict:
+    """Live price + day% every 60s. Falls back to EOD outside 08:00–16:35 London."""
+    prev = daily['prev_eod']
+    if not _is_market_open():
+        close   = daily['close_eod']
+        chg_pct = (close / prev - 1) * 100 if prev else 0.0
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None, 'is_intraday': False}
+    try:
+        fi      = yf.Ticker(ticker).fast_info
+        div     = 100 if fi.currency == 'GBp' else 1
+        close   = float(fi.last_price) / div
+        chg_pct = (close / prev - 1) * 100 if prev else 0.0
+        df_1d   = yf.download(ticker, period='1d', interval='1m', progress=False, auto_adjust=True)
+        vol_ratio = None
+        if not df_1d.empty:
+            if isinstance(df_1d.columns, pd.MultiIndex):
+                df_1d.columns = df_1d.columns.droplevel(1)
+            if 'Volume' in df_1d.columns:
+                intraday_vol = float(df_1d['Volume'].sum())
+                avg = daily.get('vol_20d_avg')
+                if avg and avg > 0:
+                    vol_ratio = intraday_vol / avg
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio, 'is_intraday': True}
+    except Exception:
+        close   = daily['close_eod']
+        chg_pct = (close / prev - 1) * 100 if prev else 0.0
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None, 'is_intraday': False}
+
+
 def fetch_rs_ratio(etf: str) -> float | None:
-    """Return 30-day % change of the ETF/benchmark RS ratio series.
-    FX is a constant multiplier that cancels in ratio_today/ratio_30d_ago."""
+    """Return 30-day % change of the ETF/benchmark RS ratio. FX cancels in ratio-of-ratios."""
     if etf not in RS_BENCHMARKS:
         return None
     bench_ticker, _ = RS_BENCHMARKS[etf]
-    etf_df   = fetch_data(TICKERS[etf], 30)
-    bench_df = fetch_data(bench_ticker, 30)
+    etf_df   = _get_daily_df(TICKERS[etf])
+    bench_df = _get_daily_df(bench_ticker)
     if etf_df.empty or bench_df.empty:
         return None
-    combined = pd.DataFrame({
-        'etf':   etf_df['Close'],
-        'bench': bench_df['Close'],
-    }).dropna()
-    cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
-    window = combined[combined.index >= cutoff]
+    combined = pd.DataFrame({'etf': etf_df['Close'], 'bench': bench_df['Close']}).dropna()
+    cutoff   = pd.Timestamp.today() - pd.Timedelta(days=30)
+    window   = combined[combined.index >= cutoff]
     if len(window) < 2:
         return None
     rs = window['etf'] / window['bench']
@@ -267,65 +361,49 @@ def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
 
 
 def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
-    df = fetch_data(ticker, _INDICATOR_DAYS)
-    if df.empty:
+    daily = fetch_daily(ticker)
+    if daily is None:
         return None
+    intra  = fetch_intraday(ticker, daily)
+    close  = intra['close']
+    sma20  = daily['sma20']
+    sma50  = daily['sma50']
+    pct20  = (close - sma20) / sma20 * 100
+    pct50  = (close - sma50) / sma50 * 100
+    rec, reason = get_recommendation(daily['rsi'], close, sma20, sma50)
+    conviction  = get_conviction(rec, daily['rsi'], pct20, pct50)
 
-    # close/prev from df (already GBp-converted by fetch_data); 52W high from period='1y' download
-    close = float(df['Close'].iloc[-1])
-    prev  = float(df['Close'].iloc[-2]) if len(df) > 1 else close
-    try:
-        fi   = yf.Ticker(ticker).fast_info
-        div  = 100 if fi.currency == 'GBp' else 1
-        _1y  = yf.download(ticker, period='1y', progress=False, auto_adjust=True)
-        if isinstance(_1y.columns, pd.MultiIndex):
-            _1y.columns = _1y.columns.droplevel(1)
-        high_52w = float(_1y['Close'].dropna().max()) / div
-    except Exception:
-        high_52w = float(df['Close'].tail(252).max())
+    # Volume: intraday cumulative ratio if market open, else last EOD bar ratio
+    vol_ratio   = intra['vol_ratio']
+    proxy_label = None
+    if vol_ratio is None:
+        vol_ratio = _compute_vol_ratio(_get_daily_df(ticker))
+    if vol_ratio is None and vol_proxy:
+        vol_ratio = _compute_vol_ratio(_get_daily_df(vol_proxy))
+        if vol_ratio is not None:
+            proxy_label = vol_proxy
 
-    drawdown = (close / high_52w - 1) * 100 if high_52w else None
-
-    # Weekly change — first close in current ISO week (from historical df)
-    last_date  = df.index[-1]
+    # Weekly change: first EOD close in current ISO week vs current price
+    eod_df     = _get_daily_df(ticker)
+    last_date  = eod_df.index[-1]
     week_start = last_date - pd.Timedelta(days=last_date.dayofweek)
-    week_df    = df[df.index >= week_start]
+    week_df    = eod_df[eod_df.index >= week_start]
     if len(week_df) >= 2:
         wk_base      = float(week_df['Close'].iloc[0])
         week_chg_pct = (close - wk_base) / wk_base * 100
     else:
         week_chg_pct = 0.0
 
-    rsi_s = df['RSI'].dropna()
-    s20_s = df['SMA20'].dropna()
-    s50_s = df['SMA50'].dropna()
-    rsi        = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
-    rsi_change = float(rsi_s.iloc[-1] - rsi_s.iloc[-11]) if len(rsi_s) >= 11 else None
-    sma20 = float(s20_s.iloc[-1]) if not s20_s.empty else close
-    sma50 = float(s50_s.iloc[-1]) if not s50_s.empty else close
-    chg_pct = (close - prev) / prev * 100 if prev else 0.0
-    pct20   = (close - sma20) / sma20 * 100
-    pct50   = (close - sma50) / sma50 * 100
-    rec, reason = get_recommendation(rsi, close, sma20, sma50)
-    conviction  = get_conviction(rec, rsi, pct20, pct50)
-
-    vol_ratio = _compute_vol_ratio(df)
-    proxy_label = None
-    if vol_ratio is None and vol_proxy:
-        proxy_df  = fetch_data(vol_proxy, 30)
-        vol_ratio = _compute_vol_ratio(proxy_df)
-        if vol_ratio is not None:
-            proxy_label = vol_proxy
-
     return {
-        'close': close, 'chg_pct': chg_pct, 'week_chg_pct': week_chg_pct,
+        'close': close, 'chg_pct': intra['chg_pct'], 'week_chg_pct': week_chg_pct,
         'vol_ratio': vol_ratio, 'vol_proxy': proxy_label,
-        'rsi': rsi, 'sma20': sma20, 'sma50': sma50,
+        'rsi': daily['rsi'], 'sma20': sma20, 'sma50': sma50,
         'vs20': 'Above' if close >= sma20 else 'Below',
         'vs50': 'Above' if close >= sma50 else 'Below',
         'pct20': pct20, 'pct50': pct50,
         'rec': rec, 'reason': reason, 'conviction': conviction,
-        'drawdown': drawdown, 'rsi_change': rsi_change,
+        'drawdown': daily['drawdown'], 'rsi_change': daily['rsi_change'],
+        'daily_cached_at': daily['cached_at'],
     }
 
 
@@ -653,7 +731,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rec        = data['rec']
             conv       = data['conviction']
             chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
-            chg_color  = GREEN if chg_pct > 1.5 else (RED if chg_pct < -1.5 else YELLOW)
+            chg_color  = GREEN if chg_pct > 0 else (RED if chg_pct < 0 else MUTED)
             arrow      = '+' if chg_pct >= 0 else ''
             row_bg     = get_row_tint(rec, conv)
             conv_color = CONVICTION_COLOR[conv]
@@ -1104,8 +1182,16 @@ def update_signal_summary(tab, _, price_period):
     # Sort gainers first (by today's daily change regardless of toggle)
     rows.sort(key=lambda r: r['data']['chg_pct'] if r['data'] else -999.0, reverse=True)
 
-    now = datetime.now().strftime('%H:%M:%S')
-    return build_summary_table(rows, show_week=show_week), f'Updated {now}'
+    now      = datetime.now().strftime('%H:%M:%S')
+    daily_ts = next((r['data']['daily_cached_at'] for r in rows if r['data']), None)
+    updated_el = html.Div([
+        html.Div(f'Updated {now}', style={'color': MUTED, 'fontSize': '11px'}),
+        html.Div(
+            f'Daily stats as of {daily_ts}' if daily_ts else '',
+            style={'color': MUTED, 'fontSize': '10px', 'marginTop': '1px'},
+        ),
+    ])
+    return build_summary_table(rows, show_week=show_week), updated_el
 
 
 # ── ETF / TF store callbacks ──────────────────────────────────────────────────
