@@ -48,17 +48,54 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.7.0
-Dashboard columns (all verified): ETF, PRICE·Day%, VOLUME,
-CONVICTION, ACTION, ENTRY AT, RSI 14, SMA POSITION,
-52W DRAWDOWN, RS TREND 30d, SIGNAL CHANGED.
+Version: v1.8.0 (code correct on disk — rendering issue unresolved, see below)
+Dashboard columns (intended): ETF, PRICE/Day%, VOLUME,
+CONVICTION (+ grey age stamp), ACTION (+ grey age stamp),
+ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d.
+SIGNAL CHANGED column removed in v1.8.0 code.
+
+### 2026-05-28 — v1.8.0 session
+BUILT: Removed SIGNAL CHANGED column from headers list (10 cols, not 11).
+BUILT: _signal_history now tracks conviction and action independently,
+  each with their own datetime timestamp.
+BUILT: _update_signal_history(etf, conviction, action) returns
+  (conv_age, action_age) tuple.
+BUILT: _format_age() buckets elapsed days into:
+  today / Nd ago / 1w ago / 2w ago / 1m ago / 2m ago / 3m+ ago.
+BUILT: conv_cell and action_cell each render a grey Div(age) below
+  the badge/text. Falls back to "unknown" if no history entry.
+NOT TOUCHED: fetch_intraday, fetch_daily, benchmarks, GBp conversion,
+  all other columns.
+
+### 2026-05-28 — UNRESOLVED RENDERING ISSUE
+PROBLEM: Browser shows old layout (SIGNAL CHANGED column present,
+  middle-dot in PRICE header) even after server restart.
+CONFIRMED ON DISK:
+  - grep finds zero occurrences of "SIGNAL CHANGED" in app.py
+  - Line 740 reads 'PRICE / ' + period_label (slash, not middle dot)
+  - ast.parse confirms file is valid Python
+  - Python inspect.getfile() confirms it loads C:\Users\User\isa-terminal\app.py
+  - app.py is 67,900 bytes dated 3:45 PM, newer than any .pyc
+  - __pycache__ was deleted and confirmed absent
+SUSPECTED CAUSE: Dash component tree may be cached at import time or
+  the Dash renderer is serving a stale client-side bundle. The layout
+  function build_summary_table is called inside a callback, so it
+  should re-execute on each refresh — but something is preventing the
+  new column structure from reaching the browser.
+NEXT SESSION: Investigate why Dash is not re-rendering the table
+  layout on restart. Try: adding debug=True to see reload messages,
+  checking if app_old.py is somehow still being imported, and
+  verifying the callback output reaches the browser via DevTools
+  Network tab (look for /_dash-update-component response body).
 
 ## REMAINING BUILD ITEMS
-1. Signal Audit Log — HIGH PRIORITY
-   Timestamped JSON on every conviction/action change.
-   Fields: ticker, timestamp, old_conviction, new_conviction,
-   old_action, new_action, price_at_change, rsi_at_change.
-   New "Signal History" tab. Show days unchanged per signal.
+1. UNRESOLVED: v1.8.0 rendering — fix SIGNAL CHANGED column still
+   showing in browser despite correct code on disk (see above).
+
+2. Signal Audit Log — HIGH PRIORITY (partially done via v1.8)
+   In-memory age stamps are now live. Full audit log would add
+   persistent JSON, old→new transitions, price/RSI at change,
+   and a dedicated Signal History tab.
 
 2. SGLS Position Review — URGENT
    -21.6% drawdown while gold at USD ATH.

@@ -113,20 +113,39 @@ TAB_SELECTED = {**TAB_STYLE, 'color': TEXT, 'borderBottom': f'2px solid {ACCENT}
 _signal_history: dict = {}
 
 
-def _update_signal_history(etf: str, new_signal: str) -> str:
-    now  = datetime.now()
-    prev = _signal_history.get(etf)
-    if prev is None or prev['signal'] != new_signal:
-        _signal_history[etf] = {'signal': new_signal, 'changed_at': now}
-        return 'Just now'
-    elapsed = now - prev['changed_at']
-    if elapsed.days >= 1:
-        return f'{elapsed.days}d ago'
-    hours = elapsed.seconds // 3600
-    if hours >= 1:
-        return f'{hours}h ago'
-    mins = elapsed.seconds // 60
-    return f'{max(mins, 1)}m ago'
+def _format_age(changed_at: datetime) -> str:
+    days = (datetime.now() - changed_at).days
+    if days < 1:
+        return 'today'
+    if days < 7:
+        return f'{days}d ago'
+    if days < 14:
+        return '1w ago'
+    if days < 28:
+        return '2w ago'
+    if days < 60:
+        return '1m ago'
+    if days < 90:
+        return '2m ago'
+    return '3m+ ago'
+
+
+def _update_signal_history(etf: str, conviction: str, action: str) -> tuple[str, str]:
+    now   = datetime.now()
+    entry = _signal_history.get(etf)
+    if entry is None:
+        _signal_history[etf] = {
+            'conviction': conviction, 'conviction_at': now,
+            'action': action,         'action_at': now,
+        }
+        return 'today', 'today'
+    if entry['conviction'] != conviction:
+        entry['conviction']    = conviction
+        entry['conviction_at'] = now
+    if entry['action'] != action:
+        entry['action']    = action
+        entry['action_at'] = now
+    return _format_age(entry['conviction_at']), _format_age(entry['action_at'])
 
 
 # ── Calculations ──────────────────────────────────────────────────────────────
@@ -716,14 +735,26 @@ def _macro_threshold_reference() -> html.Div:
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     period_label = 'Wk %' if show_week else 'Day %'
-    headers = ['ETF', f'PRICE · {period_label}', 'VOLUME', 'CONVICTION', 'ACTION', 'ENTRY AT', 'RSI 14', 'SMA POSITION', '52W DRAWDOWN', 'RS TREND 30d', 'SIGNAL CHANGED']
+    headers = [
+        'ETF',
+        'PRICE / ' + period_label,
+        'VOLUME',
+        'CONVICTION',
+        'ACTION',
+        'ENTRY AT',
+        'RSI 14',
+        'SMA POSITION',
+        '52W DRAWDOWN',
+        'RS TREND 30d',
+    ]
     thead = html.Thead(html.Tr([html.Th(h, style=TH_STYLE) for h in headers]))
 
     tbody_rows = []
     for row in rows:
-        etf         = row['etf']
-        data        = row.get('data')
-        sig_changed = row.get('sig_changed', '—')
+        etf        = row['etf']
+        data       = row.get('data')
+        conv_age   = row.get('conv_age',   'unknown')
+        action_age = row.get('action_age', 'unknown')
 
         if data is None:
             tr = html.Tr([
@@ -731,19 +762,19 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                     html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE),
-                html.Td('No data', colSpan=10, style={**TD_STYLE, 'color': MUTED}),
+                html.Td('No data', colSpan=9, style={**TD_STYLE, 'color': MUTED}),
             ], style={'borderBottom': f'1px solid {BORDER}'})
         else:
             rec        = data['rec']
             conv       = data['conviction']
             chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
             day_color  = GREEN if chg_pct > 0 else (RED if chg_pct < 0 else MUTED)
-            day_arrow  = '↑' if chg_pct > 0 else ('↓' if chg_pct < 0 else '→')
+            day_arrow  = '+' if chg_pct > 0 else ('-' if chg_pct < 0 else ' ')
             row_bg     = get_row_tint(rec, conv)
             conv_color = CONVICTION_COLOR[conv]
             rec_color  = REC_COLOR[rec]
 
-            # ETF name cell — WTAI gets AIAG.L proxy note
+            # ETF name cell
             etf_name_children = [
                 html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                 html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
@@ -762,36 +793,48 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 vol_color  = GREEN if vr >= 1.3 else (YELLOW if vr >= 0.8 else MUTED)
                 proxy_note = data.get('vol_proxy')
                 prefix     = '~' if vol_partial else ''
-                tooltip    = ('Partial session — volume will increase through the day.'
-                              if vol_partial else None)
+                tooltip    = 'Partial session - volume will increase through the day.' if vol_partial else None
                 vol_cell = html.Td([
-                    html.Span(f'{prefix}{vr:.1f}×', style={'color': vol_color, 'fontWeight': '700'}),
+                    html.Span(f'{prefix}{vr:.1f}x', style={'color': vol_color, 'fontWeight': '700'}),
                     html.Div(
-                        f'vs 20d avg{" (proxy)" if proxy_note else ""}',
+                        'vs 20d avg' + (' (proxy)' if proxy_note else ''),
                         style={'color': MUTED, 'fontSize': '10px'},
                     ),
                 ], style=TD_STYLE, title=tooltip)
             else:
-                vol_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+                vol_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
-            # Conviction cell
-            conv_cell = html.Td(
+            # CONVICTION cell: badge on top, grey age stamp below
+            conv_cell = html.Td([
                 html.Span(conv, style={
-                    'background': conv_color + '22', 'color': conv_color,
-                    'border': f'1px solid {conv_color}',
-                    'padding': '2px 9px', 'borderRadius': '20px',
-                    'fontWeight': '700', 'fontSize': '11px',
+                    'background': conv_color + '22',
+                    'color': conv_color,
+                    'border': '1px solid ' + conv_color,
+                    'padding': '2px 9px',
+                    'borderRadius': '20px',
+                    'fontWeight': '700',
+                    'fontSize': '11px',
                 }),
-                style=TD_STYLE,
-            )
+                html.Div(conv_age, style={
+                    'color': MUTED,
+                    'fontSize': '10px',
+                    'marginTop': '4px',
+                }),
+            ], style=TD_STYLE)
 
-            # Action cell — specific instruction text
-            action_cell = html.Td(
+            # ACTION cell: instruction text on top, grey age stamp below
+            action_cell = html.Td([
                 html.Div(get_action_text(rec, conv), style={
-                    'color': rec_color, 'fontSize': '12px', 'fontWeight': '600',
+                    'color': rec_color,
+                    'fontSize': '12px',
+                    'fontWeight': '600',
                 }),
-                style=TD_STYLE,
-            )
+                html.Div(action_age, style={
+                    'color': MUTED,
+                    'fontSize': '10px',
+                    'marginTop': '4px',
+                }),
+            ], style=TD_STYLE)
 
             # Entry AT cell
             if rec == 'BUY':
@@ -835,21 +878,14 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 html.Div([
                     html.Span('20: ', style={'color': MUTED, 'fontSize': '10px'}),
                     html.Span(f'{data["sma20"]:.2f}', style={'color': '#ffa657', 'fontSize': '12px'}),
-                    html.Span(f'  {data["vs20"]}', style={'color': vs20_color, 'fontSize': '10px'}),
+                    html.Span('  ' + data['vs20'], style={'color': vs20_color, 'fontSize': '10px'}),
                 ]),
                 html.Div([
                     html.Span('50: ', style={'color': MUTED, 'fontSize': '10px'}),
                     html.Span(f'{data["sma50"]:.2f}', style={'color': '#d2a8ff', 'fontSize': '12px'}),
-                    html.Span(f'  {data["vs50"]}', style={'color': vs50_color, 'fontSize': '10px'}),
+                    html.Span('  ' + data['vs50'], style={'color': vs50_color, 'fontSize': '10px'}),
                 ], style={'marginTop': '3px'}),
             ], style=TD_STYLE)
-
-            # Signal changed cell
-            changed_color = ACCENT if sig_changed == 'Just now' else MUTED
-            changed_cell  = html.Td(
-                html.Span(sig_changed, style={'color': changed_color, 'fontSize': '12px'}),
-                style=TD_STYLE,
-            )
 
             # 52W drawdown cell
             dd = data.get('drawdown')
@@ -860,21 +896,23 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     style=TD_STYLE,
                 )
             else:
-                dd_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+                dd_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
             # RS trend cell
             rs_trend    = data.get('rs_ratio')
             bench_label = RS_BENCHMARKS.get(etf, (None,))[0]
             if rs_trend is not None:
-                arrow = '↑' if rs_trend > 1.5 else ('↓' if rs_trend < -1.5 else '→')
-                color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
-                sign  = '+' if rs_trend >= 0 else ''
+                rs_sign  = '+' if rs_trend >= 0 else ''
+                rs_color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
+                rs_label = 'up' if rs_trend > 1.5 else ('dn' if rs_trend < -1.5 else '->')
                 rs_cell = html.Td([
-                    html.Div(f'{arrow} {sign}{rs_trend:.1f}%', style={'color': color, 'fontWeight': '700', 'fontSize': '13px'}),
-                    html.Div(f'vs {bench_label}', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+                    html.Div(rs_label + ' ' + rs_sign + f'{rs_trend:.1f}%',
+                             style={'color': rs_color, 'fontWeight': '700', 'fontSize': '13px'}),
+                    html.Div('vs ' + str(bench_label),
+                             style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE)
             else:
-                rs_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
+                rs_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
             tr = html.Tr([
                 etf_cell,
@@ -891,12 +929,11 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 sma_cell,
                 dd_cell,
                 rs_cell,
-                changed_cell,
             ], style={
                 'background': row_bg,
-                'borderLeft': f'4px solid {conv_color}',
+                'borderLeft': '4px solid ' + conv_color,
                 'transition': 'background 0.15s',
-                'borderBottom': f'1px solid {BORDER}',
+                'borderBottom': '1px solid ' + BORDER,
             })
 
         tbody_rows.append(tr)
@@ -1186,8 +1223,11 @@ def update_signal_summary(tab, _, price_period):
             data['vol_ratio'] = None
         if data:
             data['rs_ratio'] = fetch_rs_ratio(etf)
-        sig_changed = _update_signal_history(etf, data['rec']) if data else '—'
-        rows.append({'etf': etf, 'data': data, 'sig_changed': sig_changed})
+            action_text = get_action_text(data['rec'], data['conviction'])
+            conv_age, action_age = _update_signal_history(etf, data['conviction'], action_text)
+        else:
+            conv_age = action_age = 'unknown'
+        rows.append({'etf': etf, 'data': data, 'conv_age': conv_age, 'action_age': action_age})
 
     # Sort gainers first (by today's daily change regardless of toggle)
     rows.sort(key=lambda r: r['data']['chg_pct'] if r['data'] else -999.0, reverse=True)
@@ -1470,3 +1510,4 @@ if __name__ == '__main__':
     print("  (use Network URL to open on iPhone)")
     print("=" * 52 + "\n")
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8050)))
+
