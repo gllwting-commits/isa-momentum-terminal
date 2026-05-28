@@ -737,8 +737,8 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             rec        = data['rec']
             conv       = data['conviction']
             chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
-            chg_color  = GREEN if chg_pct > 0 else (RED if chg_pct < 0 else MUTED)
-            arrow      = '+' if chg_pct >= 0 else ''
+            day_color  = GREEN if chg_pct > 0 else (RED if chg_pct < 0 else MUTED)
+            day_arrow  = '↑' if chg_pct > 0 else ('↓' if chg_pct < 0 else '→')
             row_bg     = get_row_tint(rec, conv)
             conv_color = CONVICTION_COLOR[conv]
             rec_color  = REC_COLOR[rec]
@@ -881,7 +881,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 html.Td([
                     html.Span(f'{data["close"]:.2f}', style={'color': TEXT, 'fontWeight': '700'}),
                     html.Br(),
-                    html.Span(f'{arrow}{chg_pct:.2f}%', style={'color': chg_color, 'fontSize': '11px'}),
+                    html.Span(f'{day_arrow}{abs(chg_pct):.2f}%', style={'color': day_color, 'fontSize': '11px'}),
                 ], style=TD_STYLE),
                 vol_cell,
                 conv_cell,
