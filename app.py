@@ -291,7 +291,7 @@ def fetch_daily(ticker: str) -> dict | None:
     sma50      = float(s50_s.iloc[-1]) if not s50_s.empty else close_eod
     rsi        = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
     rsi_change = float(rsi_s.iloc[-1] - rsi_s.iloc[-11]) if len(rsi_s) >= 11 else None
-    high_52w   = float(df['Close'].max())
+    high_52w   = float(df['High'].max())  # intraday high = standard 52W high definition
     drawdown   = (close_eod / high_52w - 1) * 100 if high_52w else None
     vol_20d_avg = float(df['Volume'].iloc[max(-21, -len(df)):-1].mean()) if len(df) >= 3 else None
     return {
