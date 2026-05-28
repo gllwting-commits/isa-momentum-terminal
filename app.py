@@ -310,7 +310,10 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
     if not _is_market_open():
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
-        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None, 'is_intraday': False}
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
+                'is_intraday': False, 'vol_partial': False}
+    london_now  = datetime.now(_LONDON_TZ)
+    vol_partial = london_now.time() < dt_time(14, 0)  # caveat before 14:00
     try:
         fi      = yf.Ticker(ticker).fast_info
         div     = 100 if fi.currency == 'GBp' else 1
@@ -326,11 +329,13 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
                 avg = daily.get('vol_20d_avg')
                 if avg and avg > 0:
                     vol_ratio = intraday_vol / avg
-        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio, 'is_intraday': True}
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio,
+                'is_intraday': True, 'vol_partial': vol_partial}
     except Exception:
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
-        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None, 'is_intraday': False}
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
+                'is_intraday': False, 'vol_partial': False}
 
 
 def fetch_rs_ratio(etf: str) -> float | None:
@@ -404,6 +409,7 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
         'rec': rec, 'reason': reason, 'conviction': conviction,
         'drawdown': daily['drawdown'], 'rsi_change': daily['rsi_change'],
         'daily_cached_at': daily['cached_at'],
+        'vol_partial': intra.get('vol_partial', False),
     }
 
 
@@ -750,17 +756,21 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             etf_cell = html.Td(etf_name_children, style=TD_STYLE)
 
             # Volume cell
-            vr = data.get('vol_ratio')
+            vr          = data.get('vol_ratio')
+            vol_partial = data.get('vol_partial', False)
             if vr is not None:
                 vol_color  = GREEN if vr >= 1.3 else (YELLOW if vr >= 0.8 else MUTED)
                 proxy_note = data.get('vol_proxy')
+                prefix     = '~' if vol_partial else ''
+                tooltip    = ('Partial session — volume will increase through the day.'
+                              if vol_partial else None)
                 vol_cell = html.Td([
-                    html.Span(f'{vr:.1f}×', style={'color': vol_color, 'fontWeight': '700'}),
+                    html.Span(f'{prefix}{vr:.1f}×', style={'color': vol_color, 'fontWeight': '700'}),
                     html.Div(
                         f'vs 20d avg{" (proxy)" if proxy_note else ""}',
                         style={'color': MUTED, 'fontSize': '10px'},
                     ),
-                ], style=TD_STYLE)
+                ], style=TD_STYLE, title=tooltip)
             else:
                 vol_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
