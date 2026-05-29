@@ -2,7 +2,7 @@ import json
 import os
 import socket
 from datetime import datetime, timedelta, time as dt_time
-from zoneinfo import ZoneInfo
+import pytz
 from flask import redirect, request, session
 
 import dash
@@ -256,7 +256,7 @@ def _get_gbpusd() -> float:
 
 
 # ── London market hours ───────────────────────────────────────────────────────
-_LONDON_TZ    = ZoneInfo('Europe/London')
+_LONDON_TZ    = pytz.timezone('Europe/London')
 _MARKET_OPEN  = dt_time(8,  0)
 _MARKET_CLOSE = dt_time(16, 35)
 
@@ -605,6 +605,21 @@ def toggle_btn_style(this_val: str, current_val: str) -> dict:
     }
 
 
+def _view_btn_style(this_val: str, current_val: str) -> dict:
+    active = this_val == current_val
+    return {
+        'background': 'transparent',
+        'color': TEXT if active else MUTED,
+        'border': 'none',
+        'borderBottom': f'2px solid {ACCENT}' if active else '2px solid transparent',
+        'padding': '7px 16px',
+        'cursor': 'pointer',
+        'fontFamily': 'monospace',
+        'fontSize': '12px',
+        'fontWeight': '600',
+    }
+
+
 def card(children, extra_style=None):
     s = {'background': CARD, 'border': f'1px solid {BORDER}',
          'borderRadius': '10px', 'padding': '20px', 'marginBottom': '20px'}
@@ -944,6 +959,281 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
     )
 
 
+# ── Summary view (Label/Vals inline ranked display) ───────────────────────────
+def build_summary_view(rows: list[dict], show_week: bool = False) -> html.Div:
+    LBL = {
+        'minWidth': '75px', 'display': 'inline-block', 'color': MUTED,
+        'fontSize': '11px', 'flexShrink': '0',
+    }
+    SEP      = {'borderTop': f'1px solid {BORDER}', 'margin': '6px 0'}
+    ROW_BASE = {'fontFamily': 'monospace', 'fontSize': '12px',
+                'display': 'flex', 'alignItems': 'baseline', 'padding': '3px 0'}
+
+    def _etf_color(row: dict) -> str:
+        if not row['data']:
+            return MUTED
+        action = get_action_text(row['data']['rec'], row['data']['conviction'])
+        if 'Exit' in action or 'reduce' in action:
+            return RED
+        if 'Watch' in action or 'Monitor' in action:
+            return ACCENT
+        return TEXT
+
+    def _rsi_color(rsi: float) -> str:
+        if rsi > 80 or rsi < 30:
+            return RED
+        if rsi > 70 or rsi < 50:
+            return YELLOW
+        return GREEN
+
+    def _make_row(label: str, item_spans: list) -> html.Div:
+        parts: list = []
+        for i, span in enumerate(item_spans):
+            parts.append(span)
+            if i < len(item_spans) - 1:
+                parts.append(html.Span('  ·  ', style={'color': MUTED}))
+        return html.Div([
+            html.Span(label, style=LBL),
+            html.Span(parts),
+        ], style=ROW_BASE)
+
+    period_key = 'week_chg_pct' if show_week else 'chg_pct'
+
+    # ── Ranked rows ───────────────────────────────────────────────────────────
+    # 1. Price / Day% — sorted descending by change
+    def _price_key(r):
+        return r['data'][period_key] if r['data'] else -999.0
+    price_spans = []
+    for r in sorted(rows, key=_price_key, reverse=True):
+        if not r['data']:
+            price_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        d   = r['data']
+        chg = d[period_key]
+        cc  = GREEN if chg > 0 else (RED if chg < 0 else MUTED)
+        sgn = '+' if chg > 0 else ''
+        price_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span(f'(£{d["close"]:.2f} {sgn}{chg:.1f}%)', style={'color': cc}),
+        ]))
+
+    # 2. Volume — sorted descending, None treated as 0 → sorted to end
+    def _vol_key(r):
+        return (r['data']['vol_ratio'] or 0) if r['data'] else 0
+    vol_spans = []
+    for r in sorted(rows, key=_vol_key, reverse=True):
+        if not r['data']:
+            vol_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        vr = r['data']['vol_ratio']
+        if vr is not None:
+            vc = GREEN if vr >= 1.3 else (YELLOW if vr >= 0.8 else MUTED)
+            vol_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': _etf_color(r)}),
+                html.Span(f'({vr:.1f}x)', style={'color': vc}),
+            ]))
+        else:
+            vol_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+
+    # 3. RSI 14 — sorted descending by RSI value
+    def _rsi_key(r):
+        return r['data']['rsi'] if r['data'] else -999.0
+    rsi_spans = []
+    for r in sorted(rows, key=_rsi_key, reverse=True):
+        if not r['data']:
+            rsi_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        d      = r['data']
+        rv     = d['rsi']
+        rc     = _rsi_color(rv)
+        rchg   = d.get('rsi_change')
+        delta_parts: list = []
+        if rchg is not None:
+            ds = '+' if rchg >= 0 else ''
+            dc = GREEN if rchg > 1.5 else (RED if rchg < -1.5 else YELLOW)
+            delta_parts = [html.Span(f' {ds}{rchg:.1f}', style={'color': dc, 'fontSize': '10px'})]
+        rsi_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span('(', style={'color': MUTED}),
+            html.Span(f'{rv:.1f}', style={'color': rc}),
+            *delta_parts,
+            html.Span(')', style={'color': MUTED}),
+        ]))
+
+    # 4. 52W DD — sorted best (least negative) first
+    def _dd_key(r):
+        if r['data'] and r['data'].get('drawdown') is not None:
+            return r['data']['drawdown']
+        return -999.0
+    dd_spans = []
+    for r in sorted(rows, key=_dd_key, reverse=True):
+        if not r['data']:
+            dd_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        dd = r['data'].get('drawdown')
+        if dd is not None:
+            dc = GREEN if dd > -5 else (RED if dd < -10 else YELLOW)
+            dd_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': _etf_color(r)}),
+                html.Span(f'({dd:.1f}%)', style={'color': dc}),
+            ]))
+        else:
+            dd_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+
+    # 5. RS Trend — sorted descending, benchmark label included
+    def _rs_key(r):
+        if r['data'] and r['data'].get('rs_ratio') is not None:
+            return r['data']['rs_ratio']
+        return -999.0
+    rs_spans = []
+    for r in sorted(rows, key=_rs_key, reverse=True):
+        bench = RS_BENCHMARKS.get(r['etf'], (None,))[0] or ''
+        if not r['data']:
+            rs_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span(f'(— {bench})', style={'color': MUTED}),
+            ]))
+            continue
+        rs = r['data'].get('rs_ratio')
+        if rs is not None:
+            rc  = GREEN if rs > 1.5 else (RED if rs < -1.5 else YELLOW)
+            sgn = '+' if rs >= 0 else ''
+            arr = '↑' if rs > 1.5 else ('↓' if rs < -1.5 else '→')
+            rs_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': _etf_color(r)}),
+                html.Span(f'({arr}{sgn}{rs:.1f}% {bench})', style={'color': rc}),
+            ]))
+        else:
+            rs_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span(f'(— {bench})', style={'color': MUTED}),
+            ]))
+
+    # ── Listed rows (same order as table: chg_pct descending) ────────────────
+    # 6. Conviction
+    conv_spans = []
+    for r in rows:
+        if not r['data']:
+            conv_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        conv = r['data']['conviction']
+        cc   = CONVICTION_COLOR[conv]
+        conv_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span(f'({conv})', style={'color': cc}),
+        ]))
+
+    # 7. Action (abbreviated)
+    action_spans = []
+    for r in rows:
+        if not r['data']:
+            action_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        d      = r['data']
+        action = get_action_text(d['rec'], d['conviction'])
+        if 'Exit' in action or 'reduce' in action:
+            short, ac = 'Exit',    RED
+        elif 'Add full' in action:
+            short, ac = 'Add',     GREEN
+        elif 'Add partial' in action:
+            short, ac = 'Add~',    GREEN
+        elif 'Trim' in action:
+            short, ac = 'Trim',    YELLOW
+        elif 'Watch' in action:
+            short, ac = 'Watch',   ACCENT
+        elif 'Monitor' in action:
+            short, ac = 'Monitor', ACCENT
+        else:
+            short, ac = 'Hold',    MUTED
+        action_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span(f'({short})', style={'color': ac}),
+        ]))
+
+    # 8. Entry At
+    entry_spans = []
+    for r in rows:
+        if not r['data']:
+            entry_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        d = r['data']
+        if d['rec'] == 'BUY':
+            ev, ec = 'SMA20', GREEN
+        elif d['rec'] == 'SELL':
+            ev, ec = 'Avoid', RED
+        else:
+            ev, ec = 'SMA50', MUTED
+        entry_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span(f'({ev})', style={'color': ec}),
+        ]))
+
+    # 9. SMA 20/50 position arrows (↑ = above, ↓ = below; first = SMA20, second = SMA50)
+    sma_spans = []
+    for r in rows:
+        if not r['data']:
+            sma_spans.append(html.Span([
+                html.Span(r['etf'], style={'color': MUTED}),
+                html.Span('(—)', style={'color': MUTED}),
+            ]))
+            continue
+        d   = r['data']
+        a20 = '↑' if d['vs20'] == 'Above' else '↓'
+        a50 = '↑' if d['vs50'] == 'Above' else '↓'
+        c20 = GREEN if d['vs20'] == 'Above' else RED
+        c50 = GREEN if d['vs50'] == 'Above' else RED
+        sma_spans.append(html.Span([
+            html.Span(r['etf'], style={'color': _etf_color(r)}),
+            html.Span('(', style={'color': MUTED}),
+            html.Span(a20, style={'color': c20}),
+            html.Span(a50, style={'color': c50}),
+            html.Span(')', style={'color': MUTED}),
+        ]))
+
+    # 10. Signal Age — not yet implemented (requires persistent history)
+    # TODO: Signal Age row
+
+    return html.Div([
+        _make_row('Price/Day%', price_spans),
+        _make_row('Volume',     vol_spans),
+        _make_row('RSI 14',     rsi_spans),
+        _make_row('52W DD',     dd_spans),
+        _make_row('RS Trend',   rs_spans),
+        html.Div(style=SEP),
+        _make_row('Conviction', conv_spans),
+        _make_row('Action',     action_spans),
+        _make_row('Entry At',   entry_spans),
+        _make_row('SMA 20/50',  sma_spans),
+    ], style={'padding': '4px 0'})
+
+
 # ── App & Layout ──────────────────────────────────────────────────────────────
 app = dash.Dash(
     __name__,
@@ -1062,6 +1352,7 @@ app.layout = html.Div([
     dcc.Store(id='selected-etf',  data='IWMO'),
     dcc.Store(id='selected-tf',   data='1M'),
     dcc.Store(id='price-period',  data='today'),
+    dcc.Store(id='summary-view',  data='table'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1097,7 +1388,14 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
                         html.Div(id='summary-updated', style={'color': MUTED, 'fontSize': '11px', 'textAlign': 'right'}),
                     ], style={'textAlign': 'right'}),
                 ], style={'display': 'flex', 'justifyContent': 'space-between',
-                          'alignItems': 'flex-start', 'marginBottom': '16px'}),
+                          'alignItems': 'flex-start', 'marginBottom': '4px'}),
+                html.Div([
+                    html.Button('⊟ Table',   id='btn-view-table',   n_clicks=0,
+                                style=_view_btn_style('table',   'table')),
+                    html.Button('≡ Summary', id='btn-view-summary', n_clicks=0,
+                                style=_view_btn_style('summary', 'table')),
+                ], style={'display': 'flex', 'borderBottom': f'1px solid {BORDER}',
+                          'marginBottom': '12px'}),
                 dcc.Loading(html.Div(id='signal-table'), color=ACCENT),
             ], {'overflowX': 'auto'}),
             _macro_threshold_reference(),
@@ -1208,8 +1506,9 @@ def style_toggle_buttons(period):
     [Input('main-tabs',    'value'),
      Input('refresh',      'n_intervals'),
      Input('price-period', 'data')],
+    [State('summary-view', 'data')],
 )
-def update_signal_summary(tab, _, price_period):
+def update_signal_summary(tab, _, price_period, current_view):
     if tab != 'signal-summary':
         return dash.no_update, dash.no_update
 
@@ -1241,7 +1540,47 @@ def update_signal_summary(tab, _, price_period):
             style={'color': MUTED, 'fontSize': '10px', 'marginTop': '1px'},
         ),
     ])
-    return build_summary_table(rows, show_week=show_week), updated_el
+
+    # Render both views; show the correct one based on current_view State
+    view          = current_view or 'table'
+    table_style   = {'display': 'none'} if view == 'summary' else {}
+    summary_style = {}                  if view == 'summary' else {'display': 'none'}
+    content = html.Div([
+        html.Div(build_summary_table(rows, show_week), id='view-table-container',   style=table_style),
+        html.Div(build_summary_view(rows, show_week),  id='view-summary-container', style=summary_style),
+    ])
+    return content, updated_el
+
+
+# ── Summary view toggle callbacks ────────────────────────────────────────────
+@app.callback(
+    Output('summary-view', 'data'),
+    [Input('btn-view-table', 'n_clicks'), Input('btn-view-summary', 'n_clicks')],
+    prevent_initial_call=True,
+)
+def toggle_summary_view(_, __):
+    triggered = dash.callback_context.triggered[0]['prop_id']
+    return 'summary' if 'btn-view-summary' in triggered else 'table'
+
+
+@app.callback(
+    [Output('view-table-container', 'style'), Output('view-summary-container', 'style')],
+    Input('summary-view', 'data'),
+    prevent_initial_call=True,
+)
+def switch_summary_view(view):
+    if view == 'summary':
+        return {'display': 'none'}, {}
+    return {}, {'display': 'none'}
+
+
+@app.callback(
+    [Output('btn-view-table', 'style'), Output('btn-view-summary', 'style')],
+    Input('summary-view', 'data'),
+)
+def style_view_buttons(view):
+    v = view or 'table'
+    return _view_btn_style('table', v), _view_btn_style('summary', v)
 
 
 # ── ETF / TF store callbacks ──────────────────────────────────────────────────
