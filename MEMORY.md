@@ -149,6 +149,30 @@ BUILT: fetch_rs_persist(etf) — counts consecutive days RS ratio moved
 NOT TOUCHED: fetch_intraday, fetch_daily, benchmarks, GBp conversion,
   all other columns, function signatures.
 
+### 2026-05-29 — RS flip counter + macro regime strip session
+BUILT: fetch_rs_flips(etf) — counts direction sign changes in 30-day RS
+  ratio diffs. Returns int (0+), None if series < 5 days. No new fetch.
+  Rendered as fourth line in RS TREND cell:
+    0-1 flips → "stable" (MUTED grey)
+    2-3 flips → "🟡 N flips" (YELLOW)
+    4+ flips  → "🔴 N flips" (RED)
+  Variable prefix: rs_flips. Modified: fetch_rs_flips (new), update loop
+  (one line), build_summary_table RS cell only.
+
+BUILT: Macro regime strip — replaced TNX/TYX/SOX three-card panel entirely.
+  REMOVED: fetch_macro_indicators, get_macro_status, _MACRO_META,
+    build_macro_panel, _macro_threshold_reference, MACRO_STATUS_* dicts,
+    macro-alert-panel div, update_macro_panel callback. All dead code deleted.
+  ADDED: _macro_cache (60-min TTL, separate dict), fetch_macro_regime()
+    fetches ^TNX, ^VIX, ^DXY (period='1mo' interval='1d').
+    Scoring: US10Y falling=+1/rising=-1, VIX<20=+1/>=20=-1,
+    DXY falling=+1/rising=-1. Total >=2 → RISK ON/LEANING ON (green),
+    <=-2 → RISK OFF (red), else CAUTION (amber).
+  ADDED: build_macro_strip() — compact flex strip with badge + three
+    value+arrow spans, flexWrap for mobile, subtitle below.
+  ADDED: macro-regime-strip div in layout, update_macro_strip callback.
+  NOT TOUCHED: fetch_intraday, fetch_daily, ETF table, all columns.
+
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
    no longer visible in browser. Fix confirmed.
