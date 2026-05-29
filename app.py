@@ -267,6 +267,9 @@ def _is_market_open() -> bool:
 # ── Daily data cache (refreshes once per calendar day) ────────────────────────
 _daily_cache: dict = {}
 
+# ── EOD snapshot cache (frozen at 16:35, served until next open) ──────────────
+_eod_snapshot: dict = {}  # ticker → {'result': dict, 'date': date}
+
 
 def _get_daily_df(ticker: str) -> pd.DataFrame:
     """1y daily OHLCV + SMA/RSI, cached per calendar day."""
@@ -320,15 +323,23 @@ def fetch_daily(ticker: str) -> dict | None:
 
 
 def fetch_intraday(ticker: str, daily: dict) -> dict:
-    """Live price + day% every 60s. Falls back to EOD outside 08:00–16:35 London."""
-    prev = daily['prev_eod']
+    """Live price + day% every 60s. Freezes EOD snapshot at 16:35, serves it until next open."""
+    prev       = daily['prev_eod']
+    today      = datetime.now(_LONDON_TZ).date()
+
     if not _is_market_open():
+        # Serve frozen EOD snapshot if captured today
+        snap = _eod_snapshot.get(ticker)
+        if snap and snap['date'] == today:
+            return snap['result']
+        # Pre-market or server restarted after close — fall back to daily EOD (D-1)
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
-                'is_intraday': False, 'vol_partial': False}
+                'is_intraday': False, 'vol_partial': False, 'is_d1': True}
+
     london_now  = datetime.now(_LONDON_TZ)
-    vol_partial = london_now.time() < dt_time(14, 0)  # caveat before 14:00
+    vol_partial = london_now.time() < dt_time(14, 0)
     try:
         fi      = yf.Ticker(ticker).fast_info
         div     = 100 if fi.currency == 'GBp' else 1
@@ -344,9 +355,15 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
                 avg = daily.get('vol_20d_avg')
                 if avg and avg > 0:
                     vol_ratio = intraday_vol / avg
-        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio,
-                'is_intraday': True, 'vol_partial': vol_partial}
+        result = {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio,
+                  'is_intraday': True, 'vol_partial': vol_partial}
+        _eod_snapshot[ticker] = {'result': result, 'date': today}
+        return result
     except Exception:
+        # On fetch failure during hours, serve today's snapshot if available
+        snap = _eod_snapshot.get(ticker)
+        if snap and snap['date'] == today:
+            return snap['result']
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
