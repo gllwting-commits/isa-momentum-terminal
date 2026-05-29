@@ -482,7 +482,7 @@ _macro_cache: dict = {}
 
 
 def fetch_macro_regime() -> dict:
-    """Fetch US10Y, VIX, DXY and return composite risk regime. Cached 60 minutes."""
+    """Fetch US10Y (^TNX/TLT fallback), VIX, DXY (UUP) and return composite risk regime. Cached 60 minutes."""
     now = datetime.now()
     cached = _macro_cache.get('data')
     if cached and (now - cached['ts']).total_seconds() < 3600:
@@ -499,45 +499,56 @@ def fetch_macro_regime() -> dict:
         except Exception:
             return None
 
-    macro_tnx = _fetch('^TNX')
-    macro_vix = _fetch('^VIX')
-    macro_dxy = _fetch('^DXY')
-
     def _dir(df, threshold=0.5):
         if df is None or len(df) < 2:
             return None, '→'
-        val_now  = float(df['Close'].iloc[-1])
-        idx_20d  = max(0, len(df) - 21)
-        val_20d  = float(df['Close'].iloc[idx_20d])
-        pct_chg  = (val_now - val_20d) / abs(val_20d) * 100 if val_20d != 0 else 0
-        arrow    = '↑' if pct_chg > threshold else ('↓' if pct_chg < -threshold else '→')
+        val_now = float(df['Close'].iloc[-1])
+        idx_20d = max(0, len(df) - 21)
+        val_20d = float(df['Close'].iloc[idx_20d])
+        pct_chg = (val_now - val_20d) / abs(val_20d) * 100 if val_20d != 0 else 0
+        arrow   = '↑' if pct_chg > threshold else ('↓' if pct_chg < -threshold else '→')
         return val_now, arrow
 
-    macro_us10y_val, macro_us10y_dir = _dir(macro_tnx, threshold=0.5)
-    macro_vix_val,   macro_vix_dir   = _dir(macro_vix, threshold=0.5)
-    macro_dxy_val,   macro_dxy_dir   = _dir(macro_dxy, threshold=0.5)
-
-    # Score: risk-on = +1, risk-off = -1
-    macro_score = 0
-    if macro_us10y_dir == '↓':
-        macro_score += 1
-    elif macro_us10y_dir in ('↑', '→'):
-        macro_score -= 1
-
-    if macro_vix_val is not None:
-        if macro_vix_val < 20:
-            macro_score += 1
-        else:
-            macro_score -= 1
+    # US10Y: ^TNX primary, TLT fallback (price direction inverted)
+    macro_tnx_df        = _fetch('^TNX')
+    macro_us10y_val, macro_us10y_dir = _dir(macro_tnx_df)
+    if macro_us10y_val is None:
+        macro_tlt_df = _fetch('TLT')
+        _, macro_tlt_dir = _dir(macro_tlt_df)
+        macro_us10y_dir  = {'↑': '↓', '↓': '↑', '→': '→'}.get(macro_tlt_dir, '→')
+        macro_us10y_scored = macro_tlt_df is not None and len(macro_tlt_df) >= 2
     else:
-        macro_score -= 1
+        macro_us10y_scored = True
 
-    if macro_dxy_dir == '↓':
-        macro_score += 1
-    elif macro_dxy_dir in ('↑', '→'):
-        macro_score -= 1
+    # VIX
+    macro_vix_df             = _fetch('^VIX')
+    macro_vix_val, macro_vix_dir = _dir(macro_vix_df)
+    macro_vix_scored         = macro_vix_val is not None
 
-    if macro_score >= 2:
+    # DXY via UUP (Invesco DB USD Bull ETF — more reliable feed than ^DXY)
+    macro_uup_df             = _fetch('UUP')
+    macro_dxy_val, macro_dxy_dir = _dir(macro_uup_df)
+    macro_dxy_scored         = macro_dxy_val is not None
+
+    # Score only inputs that returned data; partial if < 3
+    macro_inputs_scored = 0
+    macro_score         = 0
+
+    if macro_us10y_scored:
+        macro_inputs_scored += 1
+        macro_score += 1 if macro_us10y_dir == '↓' else -1
+
+    if macro_vix_scored:
+        macro_inputs_scored += 1
+        macro_score += 1 if macro_vix_val < 20 else -1
+
+    if macro_dxy_scored:
+        macro_inputs_scored += 1
+        macro_score += 1 if macro_dxy_dir == '↓' else -1
+
+    if macro_inputs_scored < 3:
+        macro_regime = 'PARTIAL'
+    elif macro_score >= 2:
         macro_regime = 'RISK ON' if macro_score == 3 else 'LEANING ON'
     else:
         macro_regime = 'RISK OFF' if macro_score <= -2 else 'CAUTION'
@@ -569,7 +580,14 @@ def build_macro_strip(macro_data: dict) -> html.Div:
                         style={'color': MUTED, 'fontSize': '12px',
                                'padding': '8px 20px'})
 
-    macro_badge_color = GREEN if macro_regime in ('RISK ON', 'LEANING ON') else (YELLOW if macro_regime == 'CAUTION' else RED)
+    if macro_regime == 'PARTIAL':
+        macro_badge_color = MUTED
+    elif macro_regime in ('RISK ON', 'LEANING ON'):
+        macro_badge_color = GREEN
+    elif macro_regime == 'CAUTION':
+        macro_badge_color = YELLOW
+    else:
+        macro_badge_color = RED
 
     def macro_val_span(label, val, fmt, arrow):
         val_str = fmt.format(val) if val is not None else '—'
@@ -581,13 +599,17 @@ def build_macro_strip(macro_data: dict) -> html.Div:
 
     return html.Div([
         html.Div([
-            html.Span(macro_regime, style={
-                'background': macro_badge_color, 'color': BG,
-                'padding': '3px 12px', 'borderRadius': '20px',
-                'fontWeight': '700', 'fontSize': '12px',
-                'marginRight': '14px', 'letterSpacing': '0.5px',
-                'whiteSpace': 'nowrap',
-            }),
+            html.Span(
+                'Macro data partial' if macro_regime == 'PARTIAL' else macro_regime,
+                style={
+                    'background': 'transparent' if macro_regime == 'PARTIAL' else macro_badge_color,
+                    'color': MUTED if macro_regime == 'PARTIAL' else BG,
+                    'border': f'1px solid {MUTED}' if macro_regime == 'PARTIAL' else 'none',
+                    'padding': '3px 12px', 'borderRadius': '20px',
+                    'fontWeight': '700', 'fontSize': '12px',
+                    'marginRight': '14px', 'letterSpacing': '0.5px',
+                    'whiteSpace': 'nowrap',
+                }),
             macro_val_span('US10Y:', macro_us10y, '{:.2f}%', macro_us10y_dir),
             html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
             macro_val_span('VIX:', macro_vix, '{:.1f}', macro_vix_dir),
