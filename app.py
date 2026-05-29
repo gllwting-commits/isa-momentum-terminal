@@ -14,10 +14,9 @@ from dash import Input, Output, State, dcc, html
 from plotly.subplots import make_subplots
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ETFS = ['IWMO', 'JEDG', 'SEMG', 'SEMI', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
+ETFS = ['JEDG', 'SEMG', 'SEMI', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
-    'IWMO': 'iShares Edge MSCI World Momentum Factor UCITS ETF',
     'JEDG': 'VanEck Space Innovators UCITS ETF',
     'SEMG': 'Amundi MSCI Semiconductors ESG Screened UCITS ETF',
     'SEMI': 'iShares MSCI Global Semiconductors UCITS ETF',
@@ -34,7 +33,6 @@ WTAI_VOL_PROXY = 'AIAG.L'
 RS_BENCHMARKS = {
     'SEMG': ('SOXX',   'div'),
     'SEMI': ('SOXX',   'div'),
-    'IWMO': ('SWDA.L', 'mul'),
     'WTAI': ('EQQQ.L', 'mul'),
     'JEDG': ('UFO',    'div'),
     'SGLS': ('IGLN.L', 'div'),
@@ -1372,7 +1370,7 @@ app.layout = html.Div([
              style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '0 16px 40px'}),
 
     # ── Stores & intervals ────────────────────────────────────────────────────
-    dcc.Store(id='selected-etf',  data='IWMO'),
+    dcc.Store(id='selected-etf',  data='JEDG'),
     dcc.Store(id='selected-tf',   data='1M'),
     dcc.Store(id='price-period',  data='today'),
     dcc.Store(id='summary-view',  data='table'),
@@ -1427,7 +1425,7 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
         return html.Div([
             card(html.Div(
                 [html.Button(etf, id={'type': 'etf-btn', 'index': etf}, n_clicks=0,
-                             style=etf_btn_style(etf, sel_etf or 'IWMO'))
+                             style=etf_btn_style(etf, sel_etf or 'JEDG'))
                  for etf in ETFS],
                 style={'display': 'flex', 'gap': '8px', 'flexWrap': 'wrap'},
             ), {'padding': '14px 16px'}),

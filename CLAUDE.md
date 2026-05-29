@@ -29,7 +29,7 @@ Tickers reporting in GBP pounds (no conversion):
   JEDG.L, VDPG.L, VAPX.L, SEMI.L
 
 Tickers reporting in USD (no conversion):
-  IWMO.L, WTAI.L, FLXK.L
+  WTAI.L, FLXK.L
 
 Rule: currency check is done in fetch_data() via currency == 'GBp'.
 Applied once at fetch. All downstream receives already-converted values.
@@ -43,7 +43,6 @@ JEDG: UFO     (div)  — USD bench ÷ GBPUSD → GBP
 SGLS: IGLN.L  (div)  — USD bench ÷ GBPUSD → GBP
 VDPG: VAPX.L  (None) — both GBP, straight division
 FLXK: EWY     (None) — both USD, straight division
-IWMO: SWDA.L  (mul)  — GBP bench × GBPUSD → USD
 
 ### RS TREND RULES
 - 30-day normalised percentage change of ratio series
