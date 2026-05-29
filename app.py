@@ -267,7 +267,6 @@ def _is_market_open() -> bool:
 # ── Daily data cache (refreshes once per calendar day) ────────────────────────
 _daily_cache: dict = {}
 
-_intraday_cache: dict = {}  # ticker → last valid result dict; frozen at 16:35
 
 
 def _get_daily_df(ticker: str) -> pd.DataFrame:
@@ -322,15 +321,11 @@ def fetch_daily(ticker: str) -> dict | None:
 
 
 def fetch_intraday(ticker: str, daily: dict) -> dict:
-    """Live price + day% every 60s. Outside 08:00–16:35 London, returns cached result (frozen at last fetch)."""
+    """Live price + day% every 60s during 08:00–16:35 London. Outside hours, returns EOD values from daily cache."""
     prev = daily['prev_eod']
 
     if not _is_market_open():
-        cached = _intraday_cache.get(ticker)
-        if cached is not None:
-            return cached
-        # No cache yet (pre-market / fresh restart) — fall back to daily EOD close
-        close   = daily['close_eod']
+        close   = daily['close_eod']   # df['Close'].iloc[-1]
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
                 'is_intraday': False, 'vol_partial': False, 'is_d1': True}
@@ -352,14 +347,9 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
                 avg = daily.get('vol_20d_avg')
                 if avg and avg > 0:
                     vol_ratio = intraday_vol / avg
-        result = {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio,
-                  'is_intraday': True, 'vol_partial': vol_partial}
-        _intraday_cache[ticker] = result
-        return result
+        return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': vol_ratio,
+                'is_intraday': True, 'vol_partial': vol_partial}
     except Exception:
-        cached = _intraday_cache.get(ticker)
-        if cached is not None:
-            return cached
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
