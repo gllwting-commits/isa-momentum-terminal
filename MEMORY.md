@@ -187,6 +187,22 @@ FIXED (same session): fetch_rs_flips() noise — 8 raw flips vs 4 genuine.
     WTAI: 8 raw flips → 4 smoothed, current run pos 7d (verified correct).
   Modified: fetch_rs_flips() only — two lines added (rolling + dropna guard).
 
+### 2026-05-30 — portfolio composition changes
+REMOVED: IWMO from dashboard entirely — ETFS list, ETF_NAMES,
+  RS_BENCHMARKS (was SWDA.L mul), both chart default fallbacks
+  changed to JEDG. CLAUDE.md updated (removed from USD list
+  and benchmark pairs).
+
+ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
+  Currency: GBP (not GBp — no /100 conversion).
+  Benchmark: SOXX (div) — USD bench ÷ GBPUSD → GBP, same as SEMG.
+  Volume: enabled (added to VOLUME_ETFS).
+  Position in ETFS list: after SEMG.
+  CLAUDE.md updated with currency and benchmark facts.
+
+CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
+  Both near 52W highs. Added as watching position.
+
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
    no longer visible in browser. Fix confirmed.
