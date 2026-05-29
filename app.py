@@ -14,24 +14,26 @@ from dash import Input, Output, State, dcc, html
 from plotly.subplots import make_subplots
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ETFS = ['IWMO', 'JEDG', 'SEMG', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
+ETFS = ['IWMO', 'JEDG', 'SEMG', 'SEMI', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
     'IWMO': 'iShares Edge MSCI World Momentum Factor UCITS ETF',
     'JEDG': 'VanEck Space Innovators UCITS ETF',
     'SEMG': 'Amundi MSCI Semiconductors ESG Screened UCITS ETF',
+    'SEMI': 'iShares MSCI Global Semiconductors UCITS ETF',
     'VDPG': 'Vanguard FTSE Dev Asia Pac ex-JP',
     'WTAI': 'WisdomTree AI',
     'SGLS': 'Invesco Physical Gold ETC (GBP Hedged)',
     'FLXK': 'Franklin FTSE Korea',
 }
-VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'FLXK']
+VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'SEMI', 'FLXK']
 WTAI_VOL_PROXY = 'AIAG.L'
 # RS ratio pairs: etf → (benchmark_ticker, fx)
 # fx='div': bench is USD, ETF is GBP → bench_gbp = bench_usd / GBPUSD
 # fx='mul': bench is GBP, ETF is USD → bench_usd = bench_gbp * GBPUSD
 RS_BENCHMARKS = {
     'SEMG': ('SOXX',   'div'),
+    'SEMI': ('SOXX',   'div'),
     'IWMO': ('SWDA.L', 'mul'),
     'WTAI': ('EQQQ.L', 'mul'),
     'JEDG': ('UFO',    'div'),

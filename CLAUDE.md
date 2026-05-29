@@ -26,7 +26,7 @@ Tickers reporting in PENCE (divide by 100 at fetch, once only):
   SEMG.L, SGLS.L, EQQQ.L, SWDA.L
 
 Tickers reporting in GBP pounds (no conversion):
-  JEDG.L, VDPG.L, VAPX.L
+  JEDG.L, VDPG.L, VAPX.L, SEMI.L
 
 Tickers reporting in USD (no conversion):
   IWMO.L, WTAI.L, FLXK.L
@@ -37,6 +37,7 @@ Do not convert again anywhere else.
 
 ### BENCHMARK PAIRS (DECIDED — DO NOT CHANGE WITHOUT ASKING)
 SEMG: SOXX    (div)  — USD bench ÷ GBPUSD → GBP
+SEMI: SOXX    (div)  — USD bench ÷ GBPUSD → GBP
 WTAI: EQQQ.L  (mul)  — GBP bench × GBPUSD → USD
 JEDG: UFO     (div)  — USD bench ÷ GBPUSD → GBP
 SGLS: IGLN.L  (div)  — USD bench ÷ GBPUSD → GBP
