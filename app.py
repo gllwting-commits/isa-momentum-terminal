@@ -400,7 +400,7 @@ def fetch_rs_persist(etf: str) -> tuple[str, int] | None:
 
 
 def fetch_rs_flips(etf: str) -> int | None:
-    """Return number of RS direction flips in the 30-day window. None if series < 5 days."""
+    """Return number of RS direction flips in the 30-day window using 3-day smoothed ratio. None if series < 5 days."""
     if etf not in RS_BENCHMARKS:
         return None
     bench_ticker, _ = RS_BENCHMARKS[etf]
@@ -413,7 +413,10 @@ def fetch_rs_flips(etf: str) -> int | None:
     window   = combined[combined.index >= cutoff]
     if len(window) < 5:
         return None
-    rs_vals        = (window['etf'] / window['bench']).values
+    rs_smoothed    = (window['etf'] / window['bench']).rolling(3).mean().dropna()
+    if len(rs_smoothed) < 2:
+        return None
+    rs_vals        = rs_smoothed.values
     diffs          = [rs_vals[i] - rs_vals[i - 1] for i in range(1, len(rs_vals))]
     rs_flips_count = sum(
         1 for i in range(1, len(diffs)) if (diffs[i] >= 0) != (diffs[i - 1] >= 0)
