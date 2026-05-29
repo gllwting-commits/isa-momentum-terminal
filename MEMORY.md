@@ -203,16 +203,14 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
-### 2026-05-30 — EOD snapshot cache (fetch_intraday freeze)
-BUILT: _eod_snapshot dict (per-ticker, {result, date}).
-  During market hours: every successful fetch saves result + today's
-  London date to _eod_snapshot[ticker].
-  After 16:35: if snapshot exists for today, return it immediately —
-  no yfinance call made. Values frozen at last known good state.
-  Pre-market / server restart with no today snapshot: returns
-  daily['close_eod'] with is_d1=True (yesterday's close, inert to render).
-  On exception during hours: tries snapshot before falling back.
-  Modified: fetch_intraday() only. fetch_daily untouched.
+### 2026-05-30 — _intraday_cache (fetch_intraday freeze, v2)
+REPLACED _eod_snapshot with _intraday_cache (simpler — no date wrapper).
+  _intraday_cache[ticker] = result dict (plain, no date field).
+  Outside 08:00–16:35: return cached result if present; else fall back
+  to daily['close_eod'] with is_d1=True. During hours: update cache on
+  every successful fetch; exception path also checks cache first.
+  Cache freezes naturally at 16:35 — no special EOD logic.
+  Modified: fetch_intraday() only. All other functions untouched.
 VERIFICATION PENDING: check live dashboard after 16:35 — prices
   should match Trading 212 closing prices and not change on refresh.
 
