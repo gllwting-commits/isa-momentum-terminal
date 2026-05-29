@@ -809,8 +809,17 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 proxy_note = data.get('vol_proxy')
                 prefix     = '~' if vol_partial else ''
                 tooltip    = 'Partial session - volume will increase through the day.' if vol_partial else None
+                _vol_day_pct = data.get('chg_pct')
+                if _vol_day_pct is None:
+                    vol_dir = ''
+                elif _vol_day_pct > 0.1:
+                    vol_dir = '🟢 '
+                elif _vol_day_pct < -0.1:
+                    vol_dir = '🔴 '
+                else:
+                    vol_dir = ''
                 vol_cell = html.Td([
-                    html.Span(f'{prefix}{vr:.1f}x', style={'color': vol_color, 'fontWeight': '700'}),
+                    html.Span(f'{vol_dir}{prefix}{vr:.1f}x', style={'color': vol_color, 'fontWeight': '700'}),
                     html.Div(
                         'vs 20d avg' + (' (proxy)' if proxy_note else ''),
                         style={'color': MUTED, 'fontSize': '10px'},
