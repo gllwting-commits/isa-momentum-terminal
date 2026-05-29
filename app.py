@@ -375,6 +375,34 @@ def fetch_rs_ratio(etf: str) -> float | None:
     return (rs.iloc[-1] / rs.iloc[0] - 1) * 100
 
 
+def fetch_rs_persist(etf: str) -> tuple[str, int] | None:
+    """Return (direction, count) for consecutive days RS ratio moved in same direction."""
+    if etf not in RS_BENCHMARKS:
+        return None
+    bench_ticker, _ = RS_BENCHMARKS[etf]
+    etf_df   = _get_daily_df(TICKERS[etf])
+    bench_df = _get_daily_df(bench_ticker)
+    if etf_df.empty or bench_df.empty:
+        return None
+    combined = pd.DataFrame({'etf': etf_df['Close'], 'bench': bench_df['Close']}).dropna()
+    cutoff   = pd.Timestamp.today() - pd.Timedelta(days=30)
+    window   = combined[combined.index >= cutoff]
+    if len(window) < 2:
+        return None
+    rs_vals = (window['etf'] / window['bench']).values
+    diffs   = [rs_vals[i] - rs_vals[i - 1] for i in range(1, len(rs_vals))]
+    if not diffs:
+        return None
+    rs_persist_dir = 'pos' if diffs[-1] >= 0 else 'neg'
+    rs_persist_n   = 0
+    for d in reversed(diffs):
+        if (d >= 0) == (diffs[-1] >= 0):
+            rs_persist_n += 1
+        else:
+            break
+    return (rs_persist_dir, rs_persist_n)
+
+
 def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
     if df.empty or 'Volume' not in df.columns or len(df) < 5:
         return None
@@ -929,10 +957,18 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 rs_sign  = '+' if rs_trend >= 0 else ''
                 rs_color = GREEN if rs_trend > 1.5 else (RED if rs_trend < -1.5 else YELLOW)
                 rs_label = 'up' if rs_trend > 1.5 else ('dn' if rs_trend < -1.5 else '->')
+                rs_persist_data = data.get('rs_persist')
+                if rs_persist_data is not None:
+                    rs_persist_dir, rs_persist_n = rs_persist_data
+                    rs_persist_label = f'{rs_persist_dir} {rs_persist_n}d'
+                else:
+                    rs_persist_label = '—'
                 rs_cell = html.Td([
                     html.Div(rs_label + ' ' + rs_sign + f'{rs_trend:.1f}%',
                              style={'color': rs_color, 'fontWeight': '700', 'fontSize': '13px'}),
                     html.Div('vs ' + str(bench_label),
+                             style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+                    html.Div(rs_persist_label,
                              style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE)
             else:
@@ -1530,7 +1566,8 @@ def update_signal_summary(tab, _, price_period, current_view):
         if data and etf not in VOLUME_ETFS and etf != 'WTAI':
             data['vol_ratio'] = None
         if data:
-            data['rs_ratio'] = fetch_rs_ratio(etf)
+            data['rs_ratio']   = fetch_rs_ratio(etf)
+            data['rs_persist'] = fetch_rs_persist(etf)
             action_text = get_action_text(data['rec'], data['conviction'])
             conv_age, action_age = _update_signal_history(etf, data['conviction'], action_text)
         else:
