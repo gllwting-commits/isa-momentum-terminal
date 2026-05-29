@@ -203,16 +203,15 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
-### 2026-05-30 — _intraday_cache (fetch_intraday freeze, v2)
-REPLACED _eod_snapshot with _intraday_cache (simpler — no date wrapper).
-  _intraday_cache[ticker] = result dict (plain, no date field).
-  Outside 08:00–16:35: return cached result if present; else fall back
-  to daily['close_eod'] with is_d1=True. During hours: update cache on
-  every successful fetch; exception path also checks cache first.
-  Cache freezes naturally at 16:35 — no special EOD logic.
-  Modified: fetch_intraday() only. All other functions untouched.
-VERIFICATION PENDING: check live dashboard after 16:35 — prices
-  should match Trading 212 closing prices and not change on refresh.
+### 2026-05-30 — fetch_intraday outside-hours fix (final)
+REMOVED _eod_snapshot and _intraday_cache entirely. Both caches caused
+  stale mid-session values to show outside market hours.
+FIXED: outside 08:00–16:35, fetch_intraday now returns:
+  close   = daily['close_eod']  (= df['Close'].iloc[-1])
+  chg_pct = (close / daily['prev_eod'] - 1) * 100  (= correct EOD Day%)
+  No yfinance call, no cache — reads already-populated daily dict.
+  Exception path (during hours) also falls back to daily EOD values.
+  Modified: fetch_intraday() only. _intraday_cache declaration removed.
 
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
