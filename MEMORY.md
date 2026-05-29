@@ -133,9 +133,25 @@ VERIFICATION PENDING: 2026-05-30 at 08:00 BST — confirm "Daily stats as of"
 NOT TOUCHED: fetch_daily, benchmarks, GBp conversion, column rendering,
   all calculation logic.
 
+### 2026-05-29 — volume flag + RS persist session
+BUILT: Volume direction flag — 🟢/🔴 emoji prepended to volume multiple
+  based on data['chg_pct'] sign. Deadband ±0.1% = no flag.
+  Flat/unavailable falls back gracefully (no flag, no crash).
+  Variable prefix: vol_dir. Modified: build_summary_table volume cell only.
+
+BUILT: fetch_rs_persist(etf) — counts consecutive days RS ratio moved
+  in same direction using same _get_daily_df calls (cache hits, no new fetch).
+  Returns ('pos', N) or ('neg', N), None if series < 2.
+  Rendered as small grey "pos Nd" / "neg Nd" third line in RS TREND 30d cell.
+  Variable prefix: rs_persist. Modified: fetch_rs_persist (new function),
+  update loop (one line), build_summary_table RS cell only.
+
+NOT TOUCHED: fetch_intraday, fetch_daily, benchmarks, GBp conversion,
+  all other columns, function signatures.
+
 ## REMAINING BUILD ITEMS
-1. UNRESOLVED: v1.8.0 rendering — fix SIGNAL CHANGED column still
-   showing in browser despite correct code on disk (see above).
+1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
+   no longer visible in browser. Fix confirmed.
 
 2. Signal Age row in Summary view — awaiting persistent history scope.
 
