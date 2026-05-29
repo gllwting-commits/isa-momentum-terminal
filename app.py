@@ -403,6 +403,28 @@ def fetch_rs_persist(etf: str) -> tuple[str, int] | None:
     return (rs_persist_dir, rs_persist_n)
 
 
+def fetch_rs_flips(etf: str) -> int | None:
+    """Return number of RS direction flips in the 30-day window. None if series < 5 days."""
+    if etf not in RS_BENCHMARKS:
+        return None
+    bench_ticker, _ = RS_BENCHMARKS[etf]
+    etf_df   = _get_daily_df(TICKERS[etf])
+    bench_df = _get_daily_df(bench_ticker)
+    if etf_df.empty or bench_df.empty:
+        return None
+    combined = pd.DataFrame({'etf': etf_df['Close'], 'bench': bench_df['Close']}).dropna()
+    cutoff   = pd.Timestamp.today() - pd.Timedelta(days=30)
+    window   = combined[combined.index >= cutoff]
+    if len(window) < 5:
+        return None
+    rs_vals        = (window['etf'] / window['bench']).values
+    diffs          = [rs_vals[i] - rs_vals[i - 1] for i in range(1, len(rs_vals))]
+    rs_flips_count = sum(
+        1 for i in range(1, len(diffs)) if (diffs[i] >= 0) != (diffs[i - 1] >= 0)
+    )
+    return rs_flips_count
+
+
 def _compute_vol_ratio(df: pd.DataFrame) -> float | None:
     if df.empty or 'Volume' not in df.columns or len(df) < 5:
         return None
@@ -970,6 +992,15 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                              style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                     html.Div(rs_persist_label,
                              style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
+                    html.Div(
+                        children=('—' if data.get('rs_flips') is None
+                                  else 'stable' if data['rs_flips'] <= 1
+                                  else f'🟡 {data["rs_flips"]} flips' if data['rs_flips'] <= 3
+                                  else f'🔴 {data["rs_flips"]} flips'),
+                        style={'color': (MUTED if data.get('rs_flips') is None or data['rs_flips'] <= 1
+                                         else YELLOW if data['rs_flips'] <= 3 else RED),
+                               'fontSize': '10px', 'marginTop': '2px'},
+                    ),
                 ], style=TD_STYLE)
             else:
                 rs_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
@@ -1568,6 +1599,7 @@ def update_signal_summary(tab, _, price_period, current_view):
         if data:
             data['rs_ratio']   = fetch_rs_ratio(etf)
             data['rs_persist'] = fetch_rs_persist(etf)
+            data['rs_flips']   = fetch_rs_flips(etf)
             action_text = get_action_text(data['rec'], data['conviction'])
             conv_age, action_age = _update_signal_history(etf, data['conviction'], action_text)
         else:
