@@ -58,10 +58,6 @@ RED    = '#f85149'
 YELLOW = '#d29922'
 ORANGE = '#f97316'
 
-MACRO_STATUS_COLOR = {'CLEAR': GREEN, 'WATCH': YELLOW, 'WARNING': ORANGE, 'ALERT': RED}
-MACRO_STATUS_BG    = {'CLEAR': '#0d1a0d', 'WATCH': '#1a1600', 'WARNING': '#1a0e00', 'ALERT': '#1a0d0d'}
-MACRO_STATUS_TEXT_COLOR = {'CLEAR': '#000', 'WATCH': '#000', 'WARNING': '#000', 'ALERT': '#fff'}
-
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
 SIG_DESC   = {
     'BUY':  'Oversold conditions detected — favourable entry point',
@@ -482,133 +478,128 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
     }
 
 
-def fetch_macro_indicators() -> dict:
-    result = {}
-    for key, ticker in [('TNX', '^TNX'), ('TYX', '^TYX'), ('SOX', '^SOX')]:
+_macro_cache: dict = {}
+
+
+def fetch_macro_regime() -> dict:
+    """Fetch US10Y, VIX, DXY and return composite risk regime. Cached 60 minutes."""
+    now = datetime.now()
+    cached = _macro_cache.get('data')
+    if cached and (now - cached['ts']).total_seconds() < 3600:
+        return cached['result']
+
+    def _fetch(ticker):
         try:
-            start = datetime.today() - timedelta(days=365)
-            df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+            df = yf.download(ticker, period='1mo', interval='1d', progress=False, auto_adjust=True)
             if df.empty:
-                result[key] = None
-                continue
+                return None
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
-            df = df[['Close']].dropna()
-            close      = float(df['Close'].iloc[-1])
-            ma200      = float(df['Close'].rolling(200).mean().dropna().iloc[-1]) if len(df) >= 200 else None
-            ma200_prev = (float(df['Close'].rolling(200).mean().dropna().iloc[-11])
-                          if len(df) >= 210 else None)
-            result[key] = {'close': close, 'ma200': ma200, 'ma200_prev': ma200_prev,
-                           'as_of': datetime.now().strftime('%H:%M:%S')}
+            return df[['Close']].dropna()
         except Exception:
-            result[key] = None
-    return result
+            return None
+
+    macro_tnx = _fetch('^TNX')
+    macro_vix = _fetch('^VIX')
+    macro_dxy = _fetch('^DXY')
+
+    def _dir(df, threshold=0.5):
+        if df is None or len(df) < 2:
+            return None, '→'
+        val_now  = float(df['Close'].iloc[-1])
+        idx_20d  = max(0, len(df) - 21)
+        val_20d  = float(df['Close'].iloc[idx_20d])
+        pct_chg  = (val_now - val_20d) / abs(val_20d) * 100 if val_20d != 0 else 0
+        arrow    = '↑' if pct_chg > threshold else ('↓' if pct_chg < -threshold else '→')
+        return val_now, arrow
+
+    macro_us10y_val, macro_us10y_dir = _dir(macro_tnx, threshold=0.5)
+    macro_vix_val,   macro_vix_dir   = _dir(macro_vix, threshold=0.5)
+    macro_dxy_val,   macro_dxy_dir   = _dir(macro_dxy, threshold=0.5)
+
+    # Score: risk-on = +1, risk-off = -1
+    macro_score = 0
+    if macro_us10y_dir == '↓':
+        macro_score += 1
+    elif macro_us10y_dir in ('↑', '→'):
+        macro_score -= 1
+
+    if macro_vix_val is not None:
+        if macro_vix_val < 20:
+            macro_score += 1
+        else:
+            macro_score -= 1
+    else:
+        macro_score -= 1
+
+    if macro_dxy_dir == '↓':
+        macro_score += 1
+    elif macro_dxy_dir in ('↑', '→'):
+        macro_score -= 1
+
+    if macro_score >= 2:
+        macro_regime = 'RISK ON' if macro_score == 3 else 'LEANING ON'
+    else:
+        macro_regime = 'RISK OFF' if macro_score <= -2 else 'CAUTION'
+
+    macro_result = {
+        'regime':      macro_regime,
+        'us10y':       macro_us10y_val,
+        'us10y_dir':   macro_us10y_dir,
+        'vix':         macro_vix_val,
+        'vix_dir':     macro_vix_dir,
+        'dxy':         macro_dxy_val,
+        'dxy_dir':     macro_dxy_dir,
+    }
+    _macro_cache['data'] = {'ts': now, 'result': macro_result}
+    return macro_result
 
 
-def get_macro_status(key: str, data: dict) -> tuple:
-    if data is None:
-        return 'UNKNOWN', 'No data available', ''
-    close = data['close']
-    if key == 'TNX':
-        if close >= 5.0:
-            return ('ALERT', f'{close:.3f}% — ALERT zone (5.00%+)',
-                    'Redirect contributions — SGLS gets 40% of monthly')
-        if close >= 4.8:
-            return ('WARNING', f'{close:.3f}% — WARNING zone (4.80–4.99%)',
-                    'Pause SEMG/WTAI new buys — delay IWMO entry')
-        if close >= 4.5:
-            return ('WATCH', f'{close:.3f}% — WATCH zone (4.50–4.79%)', '')
-        return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.50%)', '')
-    if key == 'TYX':
-        if close >= 5.3:
-            return ('ALERT', f'{close:.3f}% — ALERT zone (5.30%+)',
-                    'Structural regime shift — multi-year re-rating risk')
-        if close >= 5.0:
-            return ('WARNING', f'{close:.3f}% — WARNING zone (5.00–5.29%)', '')
-        if close >= 4.8:
-            return ('WATCH', f'{close:.3f}% — WATCH zone (4.80–4.99%)', '')
-        return ('CLEAR', f'{close:.3f}% — CLEAR zone (below 4.80%)', '')
-    if key == 'SOX':
-        ma200 = data.get('ma200')
-        if ma200 is None:
-            return 'UNKNOWN', 'Insufficient history for 200DMA', ''
-        ma200_prev  = data.get('ma200_prev')
-        pct         = (close - ma200) / ma200 * 100
-        pct_str     = f'+{pct:.1f}%' if pct >= 0 else f'{pct:.1f}%'
-        ma_declining = (ma200_prev is not None) and (ma200 < ma200_prev)
-        if close < ma200 and ma_declining:
-            return ('ALERT',
-                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — ALERT zone (sustained break, MA declining)',
-                    'Pause SEMG additions — redirect to VDPG/SGLS')
-        if close < ma200:
-            return ('WARNING',
-                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WARNING zone (below 200DMA)',
-                    'Pause SEMG additions — redirect to VDPG/SGLS')
-        if pct <= 3.0:
-            return ('WATCH',
-                    f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — WATCH zone (within 3% of 200DMA)', '')
-        return ('CLEAR',
-                f'{close:,.1f} — {pct_str} vs 200DMA ({ma200:,.0f}) — CLEAR zone (>3% above 200DMA)', '')
-    return 'UNKNOWN', '', ''
+def build_macro_strip(macro_data: dict) -> html.Div:
+    macro_regime      = macro_data.get('regime')
+    macro_us10y       = macro_data.get('us10y')
+    macro_us10y_dir   = macro_data.get('us10y_dir', '→')
+    macro_vix         = macro_data.get('vix')
+    macro_vix_dir     = macro_data.get('vix_dir', '→')
+    macro_dxy         = macro_data.get('dxy')
+    macro_dxy_dir     = macro_data.get('dxy_dir', '→')
 
+    if macro_regime is None:
+        return html.Div('Macro data unavailable',
+                        style={'color': MUTED, 'fontSize': '12px',
+                               'padding': '8px 20px'})
 
-_MACRO_META = {
-    'TNX': ('TNX', '10Y Treasury Yield'),
-    'TYX': ('TYX', '30Y Treasury Yield'),
-    'SOX': ('SOX', 'Philadelphia Semiconductor Index'),
-}
+    macro_badge_color = GREEN if macro_regime in ('RISK ON', 'LEANING ON') else (YELLOW if macro_regime == 'CAUTION' else RED)
 
-
-def build_macro_panel(macro_data: dict) -> html.Div:
-    cards = []
-    for key in ['TNX', 'TYX', 'SOX']:
-        data      = macro_data.get(key)
-        status, threshold_label, action = get_macro_status(key, data)
-        color     = MACRO_STATUS_COLOR.get(status, MUTED)
-        bg        = MACRO_STATUS_BG.get(status, CARD)
-        txt_color = MACRO_STATUS_TEXT_COLOR.get(status, '#fff')
-        ticker_label, full_name = _MACRO_META[key]
-        as_of = data.get('as_of', '') if data else ''
-
-        card_children = [
-            html.Div([
-                html.Span(status, style={
-                    'background': color, 'color': txt_color,
-                    'padding': '2px 10px', 'borderRadius': '20px',
-                    'fontWeight': '700', 'fontSize': '11px',
-                    'marginRight': '10px', 'letterSpacing': '0.5px',
-                }),
-                html.Span(ticker_label, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '15px', 'marginRight': '8px'}),
-                html.Span(full_name, style={'color': MUTED, 'fontSize': '11px'}),
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
-            html.P(threshold_label, style={
-                'color': TEXT, 'fontSize': '13px', 'margin': '0 0 4px 0',
-                'fontFamily': 'monospace', 'fontWeight': '600',
-            }),
-        ]
-        if action:
-            card_children.append(html.P(f'Action: {action}', style={
-                'color': color, 'fontSize': '12px', 'margin': '4px 0 0 0', 'fontStyle': 'italic',
-            }))
-        if as_of:
-            card_children.append(html.Span(f'as of {as_of}', style={
-                'color': MUTED, 'fontSize': '10px', 'display': 'block', 'marginTop': '6px',
-            }))
-        cards.append(html.Div(card_children, style={
-            'background': bg, 'border': f'1px solid {color}',
-            'borderLeft': f'4px solid {color}', 'borderRadius': '8px',
-            'padding': '12px 16px', 'flex': '1', 'minWidth': '260px',
-            'boxShadow': f'0 0 14px {color}28',
-        }))
+    def macro_val_span(label, val, fmt, arrow):
+        val_str = fmt.format(val) if val is not None else '—'
+        return html.Span(
+            [html.Span(label, style={'color': MUTED}),
+             html.Span(f' {val_str} {arrow}', style={'color': TEXT, 'fontWeight': '600'})],
+            style={'marginRight': '10px', 'whiteSpace': 'nowrap'},
+        )
 
     return html.Div([
         html.Div([
-            html.Span('MACRO CONDITIONS', style={'color': MUTED, 'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '1px'}),
-            html.Span('  ·  Rates & Semiconductor Health  ·  refreshes every 60s',
-                      style={'color': MUTED, 'fontSize': '11px'}),
-        ], style={'marginBottom': '10px'}),
-        html.Div(cards, style={'display': 'flex', 'gap': '12px', 'flexWrap': 'wrap'}),
-    ], style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '12px 16px 4px'})
+            html.Span(macro_regime, style={
+                'background': macro_badge_color, 'color': BG,
+                'padding': '3px 12px', 'borderRadius': '20px',
+                'fontWeight': '700', 'fontSize': '12px',
+                'marginRight': '14px', 'letterSpacing': '0.5px',
+                'whiteSpace': 'nowrap',
+            }),
+            macro_val_span('US10Y:', macro_us10y, '{:.2f}%', macro_us10y_dir),
+            html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
+            macro_val_span('VIX:', macro_vix, '{:.1f}', macro_vix_dir),
+            html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
+            macro_val_span('DXY:', macro_dxy, '{:.1f}', macro_dxy_dir),
+        ], style={
+            'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap',
+            'gap': '4px', 'fontSize': '12px',
+        }),
+        html.Div('Rates & risk regime · refreshes every 60s',
+                 style={'color': MUTED, 'fontSize': '10px', 'marginTop': '4px'}),
+    ], style={'padding': '8px 20px', 'borderBottom': f'1px solid {BORDER}'})
 
 
 def retirement_projection():
@@ -724,77 +715,6 @@ TD_STYLE = {
     'padding': '12px 14px', 'fontSize': '13px', 'verticalAlign': 'middle',
     'borderBottom': f'1px solid {BORDER}',
 }
-
-
-# ── Macro threshold reference panel ──────────────────────────────────────────
-def _macro_threshold_reference() -> html.Div:
-    TH_C = {**TH_STYLE, 'textAlign': 'left', 'whiteSpace': 'nowrap', 'paddingLeft': '14px'}
-    TD_C = {**TD_STYLE, 'fontSize': '12px', 'verticalAlign': 'top', 'paddingLeft': '14px'}
-
-    def tier_col(label, color, range_text, action=None):
-        children = [
-            html.Span(label, style={
-                'background': color + '22', 'color': color,
-                'border': f'1px solid {color}',
-                'padding': '2px 9px', 'borderRadius': '20px',
-                'fontWeight': '700', 'fontSize': '11px', 'letterSpacing': '0.4px',
-                'display': 'inline-block', 'marginBottom': '5px',
-            }),
-            html.Div(range_text, style={'color': color, 'fontSize': '12px', 'fontWeight': '600',
-                                        'marginBottom': '4px' if action else '0'}),
-        ]
-        if action:
-            children.append(html.Div(action, style={
-                'color': MUTED, 'fontSize': '11px', 'lineHeight': '1.5',
-                'borderLeft': f'2px solid {color}', 'paddingLeft': '6px', 'marginTop': '2px',
-            }))
-        return html.Td(children, style={**TD_C, 'minWidth': '160px'})
-
-    rows = [
-        html.Tr([
-            html.Td([
-                html.Div('TNX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('10Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  'below 4.50%'),
-            tier_col('WATCH',   YELLOW, '4.50 – 4.79%'),
-            tier_col('WARNING', ORANGE, '4.80 – 4.99%', 'Pause SEMG/WTAI new buys\nDelay IWMO entry'),
-            tier_col('ALERT',   RED,    '5.00%+',        'Redirect contributions\nSGLS gets 40% of monthly'),
-        ], style={'borderBottom': f'1px solid {BORDER}'}),
-        html.Tr([
-            html.Td([
-                html.Div('TYX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('30Y Treasury Yield', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  'below 4.80%'),
-            tier_col('WATCH',   YELLOW, '4.80 – 4.99%'),
-            tier_col('WARNING', ORANGE, '5.00 – 5.29%'),
-            tier_col('ALERT',   RED,    '5.30%+', 'Structural regime shift\nMulti-year re-rating risk'),
-        ], style={'borderBottom': f'1px solid {BORDER}'}),
-        html.Tr([
-            html.Td([
-                html.Div('SOX', style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div('Semiconductor Index', style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_C),
-            tier_col('CLEAR',   GREEN,  '>3% above 200DMA'),
-            tier_col('WATCH',   YELLOW, 'Within 3% of 200DMA'),
-            tier_col('WARNING', ORANGE, 'First close below 200DMA',      'Pause SEMG additions\nRedirect to VDPG/SGLS'),
-            tier_col('ALERT',   RED,    'Sustained break + MA declining', 'Pause SEMG additions\nRedirect to VDPG/SGLS'),
-        ]),
-    ]
-    thead = html.Thead(html.Tr([html.Th(h, style=TH_C) for h in ['Indicator', 'CLEAR', 'WATCH', 'WARNING', 'ALERT']]))
-    return card([
-        html.H3('Macro Alert Thresholds & Rationale', style={
-            'color': TEXT, 'margin': '0 0 4px 0', 'fontSize': '14px', 'fontWeight': '700',
-        }),
-        html.P('Static reference — thresholds applied to the live macro panel above',
-               style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
-        html.Div(
-            html.Table([thead, html.Tbody(rows)],
-                       style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'}),
-            style={'overflowX': 'auto'},
-        ),
-    ])
 
 
 # ── Signal Summary table ──────────────────────────────────────────────────────
@@ -1401,8 +1321,8 @@ app.layout = html.Div([
         'padding': '14px 20px', 'background': CARD, 'borderBottom': f'1px solid {BORDER}',
     }),
 
-    # ── Macro Alert Panel ─────────────────────────────────────────────────────
-    html.Div(id='macro-alert-panel'),
+    # ── Macro Regime Strip ────────────────────────────────────────────────────
+    html.Div(id='macro-regime-strip'),
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     html.Div([
@@ -1474,7 +1394,6 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
                           'marginBottom': '12px'}),
                 dcc.Loading(html.Div(id='signal-table'), color=ACCENT),
             ], {'overflowX': 'auto'}),
-            _macro_threshold_reference(),
         ])
 
     if tab == 'charts':
@@ -1905,13 +1824,13 @@ def update_isa(invested):
     return stats, fig
 
 
-# ── Macro panel callback ──────────────────────────────────────────────────────
+# ── Macro regime strip callback ───────────────────────────────────────────────
 @app.callback(
-    Output('macro-alert-panel', 'children'),
+    Output('macro-regime-strip', 'children'),
     Input('refresh', 'n_intervals'),
 )
-def update_macro_panel(_):
-    return build_macro_panel(fetch_macro_indicators())
+def update_macro_strip(_):
+    return build_macro_strip(fetch_macro_regime())
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
