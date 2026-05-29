@@ -173,6 +173,20 @@ BUILT: Macro regime strip — replaced TNX/TYX/SOX three-card panel entirely.
   ADDED: macro-regime-strip div in layout, update_macro_strip callback.
   NOT TOUCHED: fetch_intraday, fetch_daily, ETF table, all columns.
 
+FIXED (same session): macro strip data missing — ^TNX and ^DXY showing —→.
+  ^TNX: now falls back to TLT price direction (inverted) if ^TNX feed dry.
+  ^DXY: replaced with UUP (Invesco DB USD Bull ETF) — more reliable feed.
+  Partial data: if < 3 inputs scored, regime = 'PARTIAL' → grey outlined
+    "Macro data partial" badge instead of a false CAUTION.
+  Modified: fetch_macro_regime() and badge span in build_macro_strip() only.
+
+FIXED (same session): fetch_rs_flips() noise — 8 raw flips vs 4 genuine.
+  Root cause: day-to-day oscillations at 4th–5th decimal of RS ratio
+    registered as flips (e.g. +0.000005 then -0.000001).
+  Fix: apply 3-day rolling mean to RS ratio series before computing diffs.
+    WTAI: 8 raw flips → 4 smoothed, current run pos 7d (verified correct).
+  Modified: fetch_rs_flips() only — two lines added (rolling + dropna guard).
+
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
    no longer visible in browser. Fix confirmed.
