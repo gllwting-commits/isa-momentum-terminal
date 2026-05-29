@@ -88,18 +88,65 @@ NEXT SESSION: Investigate why Dash is not re-rendering the table
   verifying the callback output reaches the browser via DevTools
   Network tab (look for /_dash-update-component response body).
 
+### 2026-05-29 — v1.9.0 session
+BUILT: "⊟ Table" / "≡ Summary" sub-tab toggle inside Signal Summary card.
+BUILT: _view_btn_style() helper — TAB_STYLE-matched bottom-border toggle buttons.
+BUILT: build_summary_view() — Label/Vals inline ranked display.
+  Ranked rows (sorted): Price/Day%, Volume, RSI 14, 52W DD, RS Trend (with bench label).
+  Listed rows (chg_pct order): Conviction, Action (abbreviated), Entry At, SMA 20/50.
+  Signal Age row: placeholder comment, not yet implemented.
+  RSI coloring: >80 red, >70 amber, <30 red, <50 amber, 50–70 green.
+  ETF ticker colors: Exit action = red, Watch/Monitor = blue (ACCENT), else TEXT.
+BUILT: dcc.Store(id='summary-view', data='table') in app.layout.
+BUILT: toggle_summary_view callback — btn clicks → Store.
+BUILT: switch_summary_view callback (prevent_initial_call=True) — Store → display toggle.
+BUILT: style_view_buttons callback — Store → button highlight state.
+BUILT: update_signal_summary now accepts State('summary-view') — sets correct
+  initial display on both containers so refresh doesn't reset view state.
+  Both views always built; no extra fetches (all data cached in rows dict).
+NOT TOUCHED: fetch_intraday, fetch_daily, fetch_rs_ratio, benchmarks,
+  GBp conversion, FX logic, build_summary_table, all other columns.
+UNRESOLVED (carried forward): v1.8.0 rendering issue (SIGNAL CHANGED column
+  still visible in browser). Investigate DevTools Network tab for stale bundle.
+
+### 2026-05-29 — pytz fix session
+ROOT CAUSE: ZoneInfo requires the tzdata package to resolve named timezones
+  on Linux (Render's runtime). tzdata was not in requirements.txt, so
+  ZoneInfo('Europe/London') silently fell back to UTC. The _is_market_open()
+  check compared UTC time against 08:00–16:35 — during BST (UTC+1) the window
+  was effectively 09:00–17:35 UTC, meaning the 08:00–09:00 LSE open was always
+  missed and fetch_intraday never ran intraday mode all day on the live server.
+
+FIX:
+  - Replaced `from zoneinfo import ZoneInfo` with `import pytz` (app.py import)
+  - Replaced `_LONDON_TZ = ZoneInfo('Europe/London')` with
+    `_LONDON_TZ = pytz.timezone('Europe/London')` (line ~259)
+  - Added `pytz>=2024.1` to requirements.txt
+  - All downstream calls `datetime.now(_LONDON_TZ)` unchanged — pytz timezone
+    objects are drop-in replacements for ZoneInfo objects in datetime.now(tz).
+  - Removed temporary [DEBUG] print after verification confirmed London hour=19
+    vs UTC hour=18 with +1:00:00 offset (BST correct).
+
+VERIFICATION PENDING: 2026-05-30 at 08:00 BST — confirm "Daily stats as of"
+  timestamp in Signal Summary header updates, confirming intraday fetch fired.
+
+NOT TOUCHED: fetch_daily, benchmarks, GBp conversion, column rendering,
+  all calculation logic.
+
 ## REMAINING BUILD ITEMS
 1. UNRESOLVED: v1.8.0 rendering — fix SIGNAL CHANGED column still
    showing in browser despite correct code on disk (see above).
 
-2. Signal Audit Log — HIGH PRIORITY (partially done via v1.8)
+2. Signal Age row in Summary view — awaiting persistent history scope.
+
+3. Signal Audit Log — HIGH PRIORITY (partially done via v1.8)
    In-memory age stamps are now live. Full audit log would add
    persistent JSON, old→new transitions, price/RSI at change,
    and a dedicated Signal History tab.
 
-2. SGLS Position Review — URGENT
+4. SGLS Position Review — URGENT
    -21.6% drawdown while gold at USD ATH.
    Decision needed: keep SGLS hedged or switch to IGLN.L unhedged.
 
-3. Correlation Heatmap — LOW PRIORITY
-4. Vol-Adjusted Sizing — LOWEST PRIORITY (wrong tool for mandate)
+5. Correlation Heatmap — LOW PRIORITY
+6. Vol-Adjusted Sizing — LOWEST PRIORITY (wrong tool for mandate)
