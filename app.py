@@ -328,6 +328,17 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
     prev = daily['prev_eod']
 
     if not _is_market_open():
+        try:
+            fi      = yf.Ticker(ticker).fast_info
+            div     = 100 if fi.currency == 'GBp' else 1
+            close   = float(fi.last_price) / div
+            rmp     = fi.regular_market_previous_close
+            ref     = float(rmp) / div if (rmp and rmp > 0) else daily['close_eod']
+            chg_pct = (close / ref - 1) * 100 if ref else 0.0
+            return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
+                    'is_intraday': False, 'vol_partial': False}
+        except Exception:
+            pass
         close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
