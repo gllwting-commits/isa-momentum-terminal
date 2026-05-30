@@ -12,4 +12,6 @@ def serve_memory():
         return f.read(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 if __name__ == '__main__':
-    app.run(port=8051)
+    import os
+    port = int(os.environ.get('PORT', 8051))
+    app.run(host='0.0.0.0', port=port)
