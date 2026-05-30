@@ -48,7 +48,7 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.8.0 (code correct on disk — rendering issue unresolved, see below)
+Version: v1.9.1
 Dashboard columns (intended): ETF, PRICE/Day%, VOLUME,
 CONVICTION (+ grey age stamp), ACTION (+ grey age stamp),
 ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d.
