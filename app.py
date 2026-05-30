@@ -665,9 +665,9 @@ def build_macro_strip(macro_data: dict) -> html.Div:
                     'background': 'transparent' if macro_regime == 'PARTIAL' else macro_badge_color,
                     'color': MUTED if macro_regime == 'PARTIAL' else BG,
                     'border': f'1px solid {MUTED}' if macro_regime == 'PARTIAL' else 'none',
-                    'padding': '3px 12px', 'borderRadius': '20px',
-                    'fontWeight': '700', 'fontSize': '12px',
-                    'marginRight': '14px', 'letterSpacing': '0.5px',
+                    'padding': '4px 16px', 'borderRadius': '20px',
+                    'fontWeight': '800', 'fontSize': '15px',
+                    'marginRight': '16px', 'letterSpacing': '0.6px',
                     'whiteSpace': 'nowrap',
                 }),
             html.Span(
@@ -813,6 +813,7 @@ TD_STYLE = {
 
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
+    _mc_regime = _macro_cache.get('data', {}).get('result', {}).get('regime')
     period_label = 'Wk %' if show_week else 'Day %'
     headers = [
         'ETF',
@@ -892,7 +893,12 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             else:
                 vol_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
 
-            # CONVICTION cell: badge on top, grey age stamp below
+            # CONVICTION cell: badge on top, grey age stamp below, optional regime modifier
+            _regime_modifier = None
+            if conv == 'HIGH' and _mc_regime == 'RISK OFF':
+                _regime_modifier = 'regime: stress'
+            elif conv == 'HIGH' and _mc_regime == 'CAUTION':
+                _regime_modifier = 'regime: caution'
             conv_cell = html.Td([
                 html.Span(conv, style={
                     'background': conv_color + '22',
@@ -908,6 +914,11 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     'fontSize': '10px',
                     'marginTop': '4px',
                 }),
+                *([html.Div(_regime_modifier, style={
+                    'color': MUTED,
+                    'fontSize': '10px',
+                    'marginTop': '2px',
+                })] if _regime_modifier else []),
             ], style=TD_STYLE)
 
             # ACTION cell: instruction text on top, grey age stamp below
