@@ -203,6 +203,13 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
+### yfinance LSE data latency (permanent limitation)
+Weekend behaviour: LSE tickers may not populate the latest trading day's
+  Close until the following Monday. The trailing NaN row fix (below)
+  handles this by falling back to the last non-NaN close (T-1 or T-2).
+  Displaying T-1 or T-2 data on weekends is acceptable — do not attempt
+  to work around this with intraday caches or alternative data sources.
+
 ### 2026-05-30 — EOD price fix (trailing NaN row)
 ROOT CAUSE: yfinance returns a partial Friday bar (Close=NaN) that
   survives _get_daily_df's dropna() because Open/Volume have values.
