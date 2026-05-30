@@ -203,31 +203,30 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
-### yfinance LSE data latency (permanent limitation)
+### yfinance LSE data latency (permanent known limitation — no fix)
 Weekend behaviour: LSE tickers may not populate the latest trading day's
-  Close in history until the following Monday. The trailing NaN row fix
-  handles this by falling back to the last non-NaN close (T-1 or T-2).
-  fast_info.previous_close does update over the weekend and is used as
-  the primary outside-hours price source (see fetch_intraday below).
-  Displaying T-1 or T-2 data if fast_info also fails is acceptable.
+  Close in history until the following Monday. Outside market hours,
+  dashboard shows last available yfinance daily close — may be T-1 or
+  T-2 on weekends. This is acceptable; do not attempt to fix with caches
+  or fast_info (fast_info.previous_close was tried and did not work).
+  FAILED APPROACH: fast_info.previous_close as outside-hours price source
+    — appeared to work but did not. Reverted 2026-05-30. Do not retry.
 
-### 2026-05-30 — EOD price fix (trailing NaN row + fast_info fallback) ✓ VERIFIED
+### 2026-05-30 — EOD price fix (trailing NaN row)
 ROOT CAUSE: yfinance returns a partial Friday bar (Close=NaN) that
   survives _get_daily_df's dropna() because Open/Volume have values.
   df['Close'].iloc[-1] picked up that NaN → close_eod=nan → price/Day% broken.
 FIXED in fetch_daily(): use close_s = df['Close'].dropna() as source
   for close_eod and prev_eod. NaN rows skipped; last real close used.
   Also added guard: if close_s.empty → return None.
-
 ALSO FIXED: removed _eod_snapshot and _intraday_cache. Both caches
   caused stale mid-session values outside market hours.
 
-OUTSIDE-HOURS PATH (fetch_intraday) — two tiers, verified working:
-  1. fast_info.previous_close — tried first; updates over the weekend
-     even when history hasn't. GBp conversion applied. Day% calculated
-     against daily['close_eod'] (last clean history close). No is_d1 flag.
-  2. daily['close_eod'] fallback — used if fast_info fails or returns
-     null/zero. is_d1=True flag set. No yfinance call.
+OUTSIDE-HOURS PATH (fetch_intraday) — current state (unresolved):
+  Returns daily['close_eod'] (last non-NaN close) and prev_eod directly.
+  On weekends this may be T-1 or T-2 — known yfinance LSE lag, no fix.
+  fast_info.previous_close was tried as a weekend price source but did
+  not work as expected. Reverted. Do not retry.
 
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
