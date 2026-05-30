@@ -48,7 +48,7 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.11.0
+Version: v1.12.0
 Dashboard columns: ETF, PRICE/Day%, VOLUME, CONVICTION (+ grey age stamp),
   ACTION (+ grey age stamp), ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN,
   RS TREND 30d (+ persist Nd + flip count).
@@ -270,13 +270,24 @@ OUTSIDE-HOURS PATH (fetch_intraday) — verified working 2026-05-30:
   fast_info.last_price / regular_market_previous_close with GBp ÷100.
   Correctly shows Friday close on weekends. Falls back to close_eod.
 
+### 2026-05-30 — v1.12.0 Task 3: US10Y 10d delta in macro strip ✓ VERIFIED
+BUILT: US10Y in macro strip now shows level + 10d delta on one line.
+  Format: "4.45% ↓ / -1pp" (level + existing direction arrow + delta).
+  Delta = close[-1] - close[-11] on ^TNX daily series (period='3mo', already fetched).
+  Delta expressed in pp: raw_delta * 100, rounded to integer. 1pp = 0.01 yield change.
+  Coloring: positive delta = RED (rising rates), negative = GREEN (falling),
+    zero = MUTED grey (flat / deadband rounds to 0).
+  Fallback: if ^TNX series < 11 rows or exception → "/ —" in MUTED grey.
+  No new fetch. Regime scoring (US10Y/VIX/DXY) untouched.
+  Modified: fetch_macro_regime() (delta calc + macro_result key),
+    build_macro_strip() (extract delta, compute display vars, inline US10Y span).
+VERIFIED: browser confirmed level + delta visible. Delta −1pp (May 29 4.453 vs May 14 4.461).
+
 ## REMAINING BUILD ITEMS
 1. Task 2 SOX — verify Monday market open. Cross-check SOX value
    against TradingView. Confirm arrow direction matches trend.
 
-2. Task 3 TNX 10-day rate of change — add to macro strip.
-
-3. Task 4 Regime label + conviction modifier — regime signal feeds
+2. Task 4 Regime label + conviction modifier — regime signal feeds
    into conviction scoring.
 
 4. SGLS Position Review — URGENT
