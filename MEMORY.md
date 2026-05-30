@@ -48,7 +48,7 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.12.0
+Version: v1.13.0
 Dashboard columns: ETF, PRICE/Day%, VOLUME, CONVICTION (+ grey age stamp),
   ACTION (+ grey age stamp), ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN,
   RS TREND 30d (+ persist Nd + flip count).
@@ -283,12 +283,25 @@ BUILT: US10Y in macro strip now shows level + 10d delta on one line.
     build_macro_strip() (extract delta, compute display vars, inline US10Y span).
 VERIFIED: browser confirmed level + delta visible. Delta −1pp (May 29 4.453 vs May 14 4.461).
 
+### 2026-05-30 — v1.13.0 Task 4: Regime badge prominence + conviction modifier ✓ VERIFIED
+BUILT: Regime badge in build_macro_strip() made larger — font 12px→15px,
+  weight 700→800, padding 3px 12px→4px 16px, letterSpacing 0.5→0.6px.
+  Badge is now the visual anchor of the macro strip.
+
+BUILT: HIGH conviction regime modifier in build_summary_table().
+  Reads _macro_cache directly (no new fetch, no parameter change).
+  When conv == 'HIGH' and regime == 'RISK OFF' → small grey Div "regime: stress"
+  When conv == 'HIGH' and regime == 'CAUTION'  → small grey Div "regime: caution"
+  All other convictions / regimes: nothing rendered.
+  Style: MUTED grey, fontSize 10px, marginTop 2px — same as age stamps.
+  Display only — no change to signal logic, conviction scoring, or action values.
+  If _macro_cache empty: _mc_regime = None → modifier skipped, no crash.
+  Modified: build_macro_strip() (badge style only),
+    build_summary_table() (one-line cache read at top, modifier in conv_cell).
+
 ## REMAINING BUILD ITEMS
 1. Task 2 SOX — verify Monday market open. Cross-check SOX value
    against TradingView. Confirm arrow direction matches trend.
-
-2. Task 4 Regime label + conviction modifier — regime signal feeds
-   into conviction scoring.
 
 4. SGLS Position Review — URGENT
    -21.6% drawdown while gold at USD ATH.
