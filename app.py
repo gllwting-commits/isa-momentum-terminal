@@ -532,6 +532,14 @@ def fetch_macro_regime() -> dict:
     # US10Y: ^TNX primary, TLT fallback (price direction inverted)
     macro_tnx_df        = _fetch('^TNX')
     macro_us10y_val, macro_us10y_dir = _dir(macro_tnx_df)
+    macro_us10y_delta = None
+    if macro_tnx_df is not None and len(macro_tnx_df) >= 11:
+        try:
+            _tnx_close        = macro_tnx_df['Close']
+            _raw_delta        = float(_tnx_close.iloc[-1]) - float(_tnx_close.iloc[-11])
+            macro_us10y_delta = round(_raw_delta * 100)
+        except Exception:
+            pass
     if macro_us10y_val is None:
         macro_tlt_df = _fetch('TLT')
         _, macro_tlt_dir = _dir(macro_tlt_df)
@@ -591,6 +599,7 @@ def fetch_macro_regime() -> dict:
         'dxy_dir':     macro_dxy_dir,
         'sox':         macro_sox_val,
         'sox_dir':     macro_sox_dir,
+        'us10y_delta': macro_us10y_delta,
     }
     _macro_cache['data'] = {'ts': now, 'result': macro_result}
     return macro_result
@@ -606,6 +615,20 @@ def build_macro_strip(macro_data: dict) -> html.Div:
     macro_dxy_dir     = macro_data.get('dxy_dir', '→')
     macro_sox         = macro_data.get('sox')
     macro_sox_dir     = macro_data.get('sox_dir', '→')
+    macro_us10y_delta = macro_data.get('us10y_delta')
+
+    if macro_us10y_delta is None:
+        _us10y_delta_str   = '/ —'
+        _us10y_delta_color = MUTED
+    elif macro_us10y_delta == 0:
+        _us10y_delta_str   = '/ ±0pp'
+        _us10y_delta_color = MUTED
+    elif macro_us10y_delta > 0:
+        _us10y_delta_str   = f'/ +{macro_us10y_delta}pp'
+        _us10y_delta_color = RED
+    else:
+        _us10y_delta_str   = f'/ {macro_us10y_delta}pp'
+        _us10y_delta_color = GREEN
 
     if macro_regime is None:
         return html.Div('Macro data unavailable',
@@ -647,7 +670,17 @@ def build_macro_strip(macro_data: dict) -> html.Div:
                     'marginRight': '14px', 'letterSpacing': '0.5px',
                     'whiteSpace': 'nowrap',
                 }),
-            macro_val_span('US10Y:', macro_us10y, '{:.2f}%', macro_us10y_dir),
+            html.Span(
+                [html.Span('US10Y:', style={'color': MUTED}),
+                 html.Span(
+                     f' {macro_us10y:.2f}% {macro_us10y_dir}' if macro_us10y is not None else ' N/A',
+                     style={'color': TEXT if macro_us10y is not None else MUTED,
+                            'fontWeight': '600' if macro_us10y is not None else '400'},
+                 ),
+                 html.Span(f' {_us10y_delta_str}',
+                           style={'color': _us10y_delta_color, 'fontWeight': '600'})],
+                style={'marginRight': '10px', 'whiteSpace': 'nowrap'},
+            ),
             html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
             macro_val_span('VIX:', macro_vix, '{:.1f}', macro_vix_dir),
             html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
