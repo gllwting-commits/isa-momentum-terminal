@@ -510,7 +510,7 @@ def fetch_macro_regime() -> dict:
 
     def _fetch(ticker):
         try:
-            df = yf.download(ticker, period='1mo', interval='1d', progress=False, auto_adjust=True)
+            df = yf.download(ticker, period='3mo', interval='1d', progress=False, auto_adjust=True)
             if df.empty:
                 return None
             if isinstance(df.columns, pd.MultiIndex):
@@ -520,7 +520,7 @@ def fetch_macro_regime() -> dict:
             return None
 
     def _dir(df, threshold=0.5):
-        if df is None or len(df) < 2:
+        if df is None or len(df) < 1:
             return None, '→'
         val_now = float(df['Close'].iloc[-1])
         idx_20d = max(0, len(df) - 21)
