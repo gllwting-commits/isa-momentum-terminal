@@ -301,8 +301,11 @@ def fetch_daily(ticker: str) -> dict | None:
     rsi_s      = df['RSI'].dropna()
     s20_s      = df['SMA20'].dropna()
     s50_s      = df['SMA50'].dropna()
-    close_eod  = float(df['Close'].iloc[-1])
-    prev_eod   = float(df['Close'].iloc[-2]) if len(df) > 1 else close_eod
+    close_s    = df['Close'].dropna()
+    if close_s.empty:
+        return None
+    close_eod  = float(close_s.iloc[-1])
+    prev_eod   = float(close_s.iloc[-2]) if len(close_s) > 1 else close_eod
     sma20      = float(s20_s.iloc[-1]) if not s20_s.empty else close_eod
     sma50      = float(s50_s.iloc[-1]) if not s50_s.empty else close_eod
     rsi        = float(rsi_s.iloc[-1])  if not rsi_s.empty  else 50.0
