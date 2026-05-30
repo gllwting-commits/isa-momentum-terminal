@@ -180,6 +180,16 @@ FIXED (same session): macro strip data missing — ^TNX and ^DXY showing —→.
     "Macro data partial" badge instead of a false CAUTION.
   Modified: fetch_macro_regime() and badge span in build_macro_strip() only.
 
+### /memory route — ABANDONED, DO NOT RETRY
+Attempted: Flask route serving MEMORY.md as plain text at /memory.
+Failed: Dash WSGI catch-all intercepts all unknown routes before Flask
+  router runs, making custom Flask routes unreachable from the browser.
+  Tried: @server.route after app init, _flask_server pre-init with
+  server= arg passed to dash.Dash, add_url_rule. All failed.
+Do not attempt Flask route approach again. Alternative (not yet built):
+  serve MEMORY.md via a Dash callback to a hidden html.Pre element,
+  or via a dedicated Dash page at a known path.
+
 ### 2026-05-30 — SOX added to macro strip (v1.11.0) — VERIFICATION PENDING
 BUILT: SOX (^SOX) added to macro panel header bar — display only, not scored.
   ^SOX primary, SOXX fallback (same pattern as ^TNX/TLT).
