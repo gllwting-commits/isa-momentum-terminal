@@ -48,7 +48,7 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.10.0
+Version: v1.11.0
 Dashboard columns (intended): ETF, PRICE/Day%, VOLUME,
 CONVICTION (+ grey age stamp), ACTION (+ grey age stamp),
 ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d.
@@ -179,6 +179,16 @@ FIXED (same session): macro strip data missing — ^TNX and ^DXY showing —→.
   Partial data: if < 3 inputs scored, regime = 'PARTIAL' → grey outlined
     "Macro data partial" badge instead of a false CAUTION.
   Modified: fetch_macro_regime() and badge span in build_macro_strip() only.
+
+### 2026-05-30 — SOX added to macro strip (v1.11.0) — VERIFICATION PENDING
+BUILT: SOX (^SOX) added to macro panel header bar — display only, not scored.
+  ^SOX primary, SOXX fallback (same pattern as ^TNX/TLT).
+  Renders: label 'SOX:', price (integer format), trend arrow.
+  Fetch failure shows N/A in MUTED grey — same rule as other macro tickers.
+  Regime scoring logic (US10Y/VIX/DXY) completely untouched.
+  Commit: c02964c. Modified: fetch_macro_regime(), build_macro_strip() only.
+VERIFICATION PENDING: cross-check SOX value against TradingView Monday
+  market open. Confirm value displays and arrow direction matches trend.
 
 ### 2026-05-30 — macro fetch robustness fix ✓ VERIFIED (US10Y 4.45% live)
 FIXED: ^TNX returning no data with period='1mo' on weekends/holidays.
