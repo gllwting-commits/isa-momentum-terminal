@@ -567,7 +567,9 @@ def fetch_macro_regime() -> dict:
         macro_score += 1 if macro_dxy_dir == '↓' else -1
 
     if macro_inputs_scored < 3:
-        macro_regime = 'PARTIAL'
+        # Keep last known regime — a fetch failure must not change the label
+        prior        = _macro_cache.get('data', {}).get('result', {})
+        macro_regime = prior.get('regime', 'PARTIAL')
     elif macro_score >= 2:
         macro_regime = 'RISK ON' if macro_score == 3 else 'LEANING ON'
     else:
@@ -610,10 +612,15 @@ def build_macro_strip(macro_data: dict) -> html.Div:
         macro_badge_color = RED
 
     def macro_val_span(label, val, fmt, arrow):
-        val_str = fmt.format(val) if val is not None else '—'
+        if val is not None:
+            val_str   = fmt.format(val) + f' {arrow}'
+            val_style = {'color': TEXT, 'fontWeight': '600'}
+        else:
+            val_str   = 'N/A'
+            val_style = {'color': MUTED, 'fontWeight': '400'}
         return html.Span(
             [html.Span(label, style={'color': MUTED}),
-             html.Span(f' {val_str} {arrow}', style={'color': TEXT, 'fontWeight': '600'})],
+             html.Span(f' {val_str}', style=val_style)],
             style={'marginRight': '10px', 'whiteSpace': 'nowrap'},
         )
 
