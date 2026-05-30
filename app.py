@@ -1301,6 +1301,15 @@ app = dash.Dash(
 
 server = app.server
 server.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+@server.route('/memory')
+def serve_memory():
+    memory_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEMORY.md')
+    if not os.path.exists(memory_path):
+        return 'MEMORY.md not found', 404
+    with open(memory_path, encoding='utf-8') as f:
+        return f.read(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
 DASHBOARD_PASSWORD = os.environ.get('DASHBOARD_PASSWORD')
 
 _LOGIN_PAGE = """<!DOCTYPE html>
@@ -1357,7 +1366,7 @@ def logout():
 def _require_auth():
     if not DASHBOARD_PASSWORD:
         return
-    if request.path.startswith(('/login', '/logout')):
+    if request.path.startswith(('/login', '/logout', '/memory')):
         return
     if not session.get('authenticated'):
         if request.path.startswith('/_dash'):
