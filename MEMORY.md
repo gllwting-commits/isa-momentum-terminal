@@ -203,15 +203,19 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
-### 2026-05-30 — fetch_intraday outside-hours fix (final)
-REMOVED _eod_snapshot and _intraday_cache entirely. Both caches caused
-  stale mid-session values to show outside market hours.
-FIXED: outside 08:00–16:35, fetch_intraday now returns:
-  close   = daily['close_eod']  (= df['Close'].iloc[-1])
-  chg_pct = (close / daily['prev_eod'] - 1) * 100  (= correct EOD Day%)
-  No yfinance call, no cache — reads already-populated daily dict.
-  Exception path (during hours) also falls back to daily EOD values.
-  Modified: fetch_intraday() only. _intraday_cache declaration removed.
+### 2026-05-30 — EOD price fix (trailing NaN row)
+ROOT CAUSE: yfinance returns a partial Friday bar (Close=NaN) that
+  survives _get_daily_df's dropna() because Open/Volume have values.
+  df['Close'].iloc[-1] picked up that NaN → close_eod=nan → price/Day% broken.
+FIXED in fetch_daily(): use close_s = df['Close'].dropna() as source
+  for close_eod and prev_eod. NaN rows skipped; last real close used.
+  Also added guard: if close_s.empty → return None.
+  Modified: fetch_daily() only (2 lines changed, 1 guard added).
+
+ALSO FIXED (same session): removed _eod_snapshot and _intraday_cache.
+  Both caches caused stale mid-session values outside market hours.
+  Outside hours: fetch_intraday now always returns daily['close_eod']
+  and daily['prev_eod'] — no yfinance call, no cache.
 
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
