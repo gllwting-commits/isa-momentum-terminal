@@ -550,6 +550,12 @@ def fetch_macro_regime() -> dict:
     macro_dxy_val, macro_dxy_dir = _dir(macro_uup_df)
     macro_dxy_scored         = macro_dxy_val is not None
 
+    # SOX: display only — not scored for regime
+    macro_sox_df = _fetch('^SOX')
+    if macro_sox_df is None:
+        macro_sox_df = _fetch('SOXX')
+    macro_sox_val, macro_sox_dir = _dir(macro_sox_df)
+
     # Score only inputs that returned data; partial if < 3
     macro_inputs_scored = 0
     macro_score         = 0
@@ -583,6 +589,8 @@ def fetch_macro_regime() -> dict:
         'vix_dir':     macro_vix_dir,
         'dxy':         macro_dxy_val,
         'dxy_dir':     macro_dxy_dir,
+        'sox':         macro_sox_val,
+        'sox_dir':     macro_sox_dir,
     }
     _macro_cache['data'] = {'ts': now, 'result': macro_result}
     return macro_result
@@ -596,6 +604,8 @@ def build_macro_strip(macro_data: dict) -> html.Div:
     macro_vix_dir     = macro_data.get('vix_dir', '→')
     macro_dxy         = macro_data.get('dxy')
     macro_dxy_dir     = macro_data.get('dxy_dir', '→')
+    macro_sox         = macro_data.get('sox')
+    macro_sox_dir     = macro_data.get('sox_dir', '→')
 
     if macro_regime is None:
         return html.Div('Macro data unavailable',
@@ -642,6 +652,8 @@ def build_macro_strip(macro_data: dict) -> html.Div:
             macro_val_span('VIX:', macro_vix, '{:.1f}', macro_vix_dir),
             html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
             macro_val_span('DXY:', macro_dxy, '{:.1f}', macro_dxy_dir),
+            html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
+            macro_val_span('SOX:', macro_sox, '{:.0f}', macro_sox_dir),
         ], style={
             'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap',
             'gap': '4px', 'fontSize': '12px',
