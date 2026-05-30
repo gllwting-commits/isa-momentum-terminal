@@ -48,7 +48,7 @@ FAILED: df['Close'].max() for 52W high.
   Worked instead: df['High'].max().
 
 ## CURRENT STATE
-Version: v1.9.1
+Version: v1.10.0
 Dashboard columns (intended): ETF, PRICE/Day%, VOLUME,
 CONVICTION (+ grey age stamp), ACTION (+ grey age stamp),
 ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d.
@@ -164,7 +164,7 @@ BUILT: Macro regime strip — replaced TNX/TYX/SOX three-card panel entirely.
     build_macro_panel, _macro_threshold_reference, MACRO_STATUS_* dicts,
     macro-alert-panel div, update_macro_panel callback. All dead code deleted.
   ADDED: _macro_cache (60-min TTL, separate dict), fetch_macro_regime()
-    fetches ^TNX, ^VIX, ^DXY (period='1mo' interval='1d').
+    fetches ^TNX, ^VIX, ^DXY (period='3mo' interval='1d').
     Scoring: US10Y falling=+1/rising=-1, VIX<20=+1/>=20=-1,
     DXY falling=+1/rising=-1. Total >=2 → RISK ON/LEANING ON (green),
     <=-2 → RISK OFF (red), else CAUTION (amber).
@@ -179,6 +179,15 @@ FIXED (same session): macro strip data missing — ^TNX and ^DXY showing —→.
   Partial data: if < 3 inputs scored, regime = 'PARTIAL' → grey outlined
     "Macro data partial" badge instead of a false CAUTION.
   Modified: fetch_macro_regime() and badge span in build_macro_strip() only.
+
+### 2026-05-30 — macro fetch robustness fix ✓ VERIFIED (US10Y 4.45% live)
+FIXED: ^TNX returning no data with period='1mo' on weekends/holidays.
+  _fetch(): changed period='1mo' → period='3mo' — more rows, less fragility.
+  _dir(): changed len(df) < 2 → len(df) < 1 — single-row df now valid.
+FIXED: fetch failure no longer changes regime label.
+  macro_inputs_scored < 3 → reads prior cached regime instead of 'PARTIAL'.
+FIXED: macro_val_span renders 'N/A' in MUTED grey for None values (not '—').
+  Modified: fetch_macro_regime() and macro_val_span() in build_macro_strip().
 
 FIXED (same session): fetch_rs_flips() noise — 8 raw flips vs 4 genuine.
   Root cause: day-to-day oscillations at 4th–5th decimal of RS ratio
