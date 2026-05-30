@@ -7,6 +7,12 @@ File: app.py (or whatever your main file is called)
 Repo: github.com/gllwting-commits/isa-momentum-terminal
 Live: isa-momentum-terminal.onrender.com
 
+## MEMORY.md
+Fetch via GitHub API:
+  https://api.github.com/repos/gllwting-commits/isa-momentum-terminal/contents/MEMORY.md
+The JSON response contains a field called `content` which is base64-encoded.
+Decode it to read the file.
+
 ## FOUR RULES (NON-NEGOTIABLE)
 1. Ask before assuming. If intent, architecture, or requirements
    are unclear, ask one question before writing a single line.
