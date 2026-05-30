@@ -203,14 +203,17 @@ ADDED: SEMI.L (iShares MSCI Global Semiconductors UCITS ETF)
 CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
   Both near 52W highs. Added as watching position.
 
-### yfinance LSE data latency (permanent known limitation — no fix)
-Weekend behaviour: LSE tickers may not populate the latest trading day's
-  Close in history until the following Monday. Outside market hours,
-  dashboard shows last available yfinance daily close — may be T-1 or
-  T-2 on weekends. This is acceptable; do not attempt to fix with caches
-  or fast_info (fast_info.previous_close was tried and did not work).
-  FAILED APPROACH: fast_info.previous_close as outside-hours price source
-    — appeared to work but did not. Reverted 2026-05-30. Do not retry.
+### yfinance LSE outside-hours price (permanent architectural fact)
+fast_info fields for LSE tickers — verified 2026-05-30:
+  fast_info.last_price                  — actual last market price ✓ USE THIS
+  fast_info.regular_market_previous_close — previous session close  ✓ USE THIS
+  fast_info.previous_close              — unreliable, not a real session close ✗ AVOID
+
+Outside market hours, fetch_intraday uses fast_info.last_price as
+  close and regular_market_previous_close as Day% denominator.
+  GBp conversion (÷100) applied to both fields for LSE pence tickers.
+  Falls back to daily['close_eod'] if fast_info raises an exception.
+  Verified working on weekend — shows Friday close correctly.
 
 ### 2026-05-30 — EOD price fix (trailing NaN row)
 ROOT CAUSE: yfinance returns a partial Friday bar (Close=NaN) that
@@ -222,11 +225,9 @@ FIXED in fetch_daily(): use close_s = df['Close'].dropna() as source
 ALSO FIXED: removed _eod_snapshot and _intraday_cache. Both caches
   caused stale mid-session values outside market hours.
 
-OUTSIDE-HOURS PATH (fetch_intraday) — current state (unresolved):
-  Returns daily['close_eod'] (last non-NaN close) and prev_eod directly.
-  On weekends this may be T-1 or T-2 — known yfinance LSE lag, no fix.
-  fast_info.previous_close was tried as a weekend price source but did
-  not work as expected. Reverted. Do not retry.
+OUTSIDE-HOURS PATH (fetch_intraday) — verified working 2026-05-30:
+  fast_info.last_price / regular_market_previous_close with GBp ÷100.
+  Correctly shows Friday close on weekends. Falls back to close_eod.
 
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
