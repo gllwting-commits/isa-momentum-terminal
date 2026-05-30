@@ -205,24 +205,29 @@ CONTEXT: SEMI.L YTD +86% vs SEMG.L +56%, 3M +59% vs +43.5%.
 
 ### yfinance LSE data latency (permanent limitation)
 Weekend behaviour: LSE tickers may not populate the latest trading day's
-  Close until the following Monday. The trailing NaN row fix (below)
+  Close in history until the following Monday. The trailing NaN row fix
   handles this by falling back to the last non-NaN close (T-1 or T-2).
-  Displaying T-1 or T-2 data on weekends is acceptable — do not attempt
-  to work around this with intraday caches or alternative data sources.
+  fast_info.previous_close does update over the weekend and is used as
+  the primary outside-hours price source (see fetch_intraday below).
+  Displaying T-1 or T-2 data if fast_info also fails is acceptable.
 
-### 2026-05-30 — EOD price fix (trailing NaN row)
+### 2026-05-30 — EOD price fix (trailing NaN row + fast_info fallback) ✓ VERIFIED
 ROOT CAUSE: yfinance returns a partial Friday bar (Close=NaN) that
   survives _get_daily_df's dropna() because Open/Volume have values.
   df['Close'].iloc[-1] picked up that NaN → close_eod=nan → price/Day% broken.
 FIXED in fetch_daily(): use close_s = df['Close'].dropna() as source
   for close_eod and prev_eod. NaN rows skipped; last real close used.
   Also added guard: if close_s.empty → return None.
-  Modified: fetch_daily() only (2 lines changed, 1 guard added).
 
-ALSO FIXED (same session): removed _eod_snapshot and _intraday_cache.
-  Both caches caused stale mid-session values outside market hours.
-  Outside hours: fetch_intraday now always returns daily['close_eod']
-  and daily['prev_eod'] — no yfinance call, no cache.
+ALSO FIXED: removed _eod_snapshot and _intraday_cache. Both caches
+  caused stale mid-session values outside market hours.
+
+OUTSIDE-HOURS PATH (fetch_intraday) — two tiers, verified working:
+  1. fast_info.previous_close — tried first; updates over the weekend
+     even when history hasn't. GBp conversion applied. Day% calculated
+     against daily['close_eod'] (last clean history close). No is_d1 flag.
+  2. daily['close_eod'] fallback — used if fast_info fails or returns
+     null/zero. is_d1=True flag set. No yfinance call.
 
 ## REMAINING BUILD ITEMS
 1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
