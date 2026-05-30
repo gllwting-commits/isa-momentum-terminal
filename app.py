@@ -328,7 +328,20 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
     prev = daily['prev_eod']
 
     if not _is_market_open():
-        close   = daily['close_eod']   # df['Close'].iloc[-1]
+        # Try fast_info.previous_close for Friday's price when yfinance history hasn't updated yet
+        try:
+            fi         = yf.Ticker(ticker).fast_info
+            prev_close = fi.previous_close
+            if prev_close is not None and prev_close > 0:
+                div     = 100 if fi.currency == 'GBp' else 1
+                close   = float(prev_close) / div
+                chg_pct = (close / daily['close_eod'] - 1) * 100 if daily['close_eod'] else 0.0
+                return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
+                        'is_intraday': False, 'vol_partial': False}
+        except Exception:
+            pass
+        # Fallback: use last clean close from daily cache
+        close   = daily['close_eod']
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
                 'is_intraday': False, 'vol_partial': False, 'is_d1': True}
