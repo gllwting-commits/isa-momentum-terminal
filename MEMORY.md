@@ -49,10 +49,15 @@ FAILED: df['Close'].max() for 52W high.
 
 ## CURRENT STATE
 Version: v1.11.0
-Dashboard columns (intended): ETF, PRICE/Day%, VOLUME,
-CONVICTION (+ grey age stamp), ACTION (+ grey age stamp),
-ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d.
-SIGNAL CHANGED column removed in v1.8.0 code.
+Dashboard columns: ETF, PRICE/Day%, VOLUME, CONVICTION (+ grey age stamp),
+  ACTION (+ grey age stamp), ENTRY AT, RSI 14, SMA POSITION, 52W DRAWDOWN,
+  RS TREND 30d (+ persist Nd + flip count).
+Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y, VIX, DXY, SOX.
+  SOX display only — not scored. Fetch failure shows N/A in grey.
+Portfolio: JEDG, SEMG, SEMI, VDPG, WTAI, SGLS, FLXK. IWMO removed.
+  SEMI.L added 2026-05-30 (GBP, SOXX benchmark).
+Outside-hours price: fast_info.last_price + regular_market_previous_close.
+  Trailing NaN Close row stripped in fetch_daily() via df['Close'].dropna().
 
 ### 2026-05-28 — v1.8.0 session
 BUILT: Removed SIGNAL CHANGED column from headers list (10 cols, not 11).
@@ -180,15 +185,22 @@ FIXED (same session): macro strip data missing — ^TNX and ^DXY showing —→.
     "Macro data partial" badge instead of a false CAUTION.
   Modified: fetch_macro_regime() and badge span in build_macro_strip() only.
 
-### /memory route — ABANDONED, DO NOT RETRY
-Attempted: Flask route serving MEMORY.md as plain text at /memory.
-Failed: Dash WSGI catch-all intercepts all unknown routes before Flask
-  router runs, making custom Flask routes unreachable from the browser.
-  Tried: @server.route after app init, _flask_server pre-init with
-  server= arg passed to dash.Dash, add_url_rule. All failed.
-Do not attempt Flask route approach again. Alternative (not yet built):
-  serve MEMORY.md via a Dash callback to a hidden html.Pre element,
-  or via a dedicated Dash page at a known path.
+### /memory Render route — ABANDONED, DO NOT RETRY
+Attempted: Flask route serving MEMORY.md as plain text at /memory
+  inside the main Dash app, and as a standalone memory_server.py
+  deployed as a separate Render service (isa-memory-server).
+Failed reasons:
+  1. Dash WSGI catch-all intercepts all unknown routes before Flask
+     router runs — Flask routes unreachable inside Dash app.
+  2. Claude cannot fetch arbitrary Render URLs due to fetch permission
+     restrictions — even a working Render endpoint is not reachable
+     by Claude at session start.
+  3. raw.githubusercontent.com CDN caching problem remains — GitHub
+     raw URL may serve a stale cached version of MEMORY.md.
+Workaround: if MEMORY.md is stale at session start, user pastes it
+  manually into the conversation.
+NOTE: isa-memory-server on Render is deployed but unused — can be
+  deleted. memory_server.py in repo can also be removed when ready.
 
 ### 2026-05-30 — SOX added to macro strip (v1.11.0) — VERIFICATION PENDING
 BUILT: SOX (^SOX) added to macro panel header bar — display only, not scored.
@@ -259,19 +271,21 @@ OUTSIDE-HOURS PATH (fetch_intraday) — verified working 2026-05-30:
   Correctly shows Friday close on weekends. Falls back to close_eod.
 
 ## REMAINING BUILD ITEMS
-1. ~~RESOLVED 2026-05-29~~: v1.8.0 rendering — SIGNAL CHANGED column
-   no longer visible in browser. Fix confirmed.
+1. Task 2 SOX — verify Monday market open. Cross-check SOX value
+   against TradingView. Confirm arrow direction matches trend.
 
-2. Signal Age row in Summary view — awaiting persistent history scope.
+2. Task 3 TNX 10-day rate of change — add to macro strip.
 
-3. Signal Audit Log — HIGH PRIORITY (partially done via v1.8)
-   In-memory age stamps are now live. Full audit log would add
-   persistent JSON, old→new transitions, price/RSI at change,
-   and a dedicated Signal History tab.
+3. Task 4 Regime label + conviction modifier — regime signal feeds
+   into conviction scoring.
 
 4. SGLS Position Review — URGENT
    -21.6% drawdown while gold at USD ATH.
    Decision needed: keep SGLS hedged or switch to IGLN.L unhedged.
 
-5. Correlation Heatmap — LOW PRIORITY
-6. Vol-Adjusted Sizing — LOWEST PRIORITY (wrong tool for mandate)
+5. Signal Audit Log — HIGH PRIORITY
+   In-memory age stamps live. Full log: persistent JSON, old→new
+   transitions, price/RSI at change, dedicated Signal History tab.
+
+6. Correlation Heatmap — LOW PRIORITY
+7. Vol-Adjusted Sizing — LOWEST PRIORITY (wrong tool for mandate)
