@@ -3,7 +3,7 @@ import os
 import socket
 from datetime import datetime, timedelta, time as dt_time
 import pytz
-from flask import Flask, redirect, request, session
+from flask import redirect, request, session
 
 import dash
 import numpy as np
@@ -1292,19 +1292,8 @@ def build_summary_view(rows: list[dict], show_week: bool = False) -> html.Div:
 
 
 # ── App & Layout ──────────────────────────────────────────────────────────────
-_flask_server = Flask(__name__)
-
-@_flask_server.route('/memory')
-def serve_memory():
-    memory_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MEMORY.md')
-    if not os.path.exists(memory_path):
-        return 'MEMORY.md not found', 404
-    with open(memory_path, encoding='utf-8') as f:
-        return f.read(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
-
 app = dash.Dash(
     __name__,
-    server=_flask_server,
     title='ISA Momentum Terminal',
     meta_tags=[{'name': 'viewport', 'content': 'width=device-width, initial-scale=1'}],
     suppress_callback_exceptions=True,
@@ -1369,7 +1358,7 @@ def logout():
 def _require_auth():
     if not DASHBOARD_PASSWORD:
         return
-    if request.path.startswith(('/login', '/logout', '/memory')):
+    if request.path.startswith(('/login', '/logout')):
         return
     if not session.get('authenticated'):
         if request.path.startswith('/_dash'):
