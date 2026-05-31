@@ -47,16 +47,35 @@ ANNUAL_RETURN  = 0.12
 PROJ_YEARS     = 20
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-BG     = '#0d1117'
-CARD   = '#161b22'
-BORDER = '#30363d'
-TEXT   = '#e6edf3'
-MUTED  = '#8b949e'
-ACCENT = '#58a6ff'
-GREEN  = '#3fb950'
-RED    = '#f85149'
-YELLOW = '#d29922'
-ORANGE = '#f97316'
+SLATE_THEME = {
+    'bg':       '#0f1117',
+    'surface':  '#161b27',
+    'card':     '#1c2333',
+    'border':   '#253047',
+    'border_l': '#2d3a54',
+    'accent':   '#f59e0b',
+    'green':    '#10b981',
+    'red':      '#ef4444',
+    'amber':    '#f59e0b',
+    'muted':    '#8b9ab0',
+    'dim':      '#3d4f68',
+    'text':     '#dde5f0',
+}
+
+BG       = SLATE_THEME['bg']
+SURFACE  = SLATE_THEME['surface']
+CARD     = SLATE_THEME['card']
+BORDER   = SLATE_THEME['border']
+BORDER_L = SLATE_THEME['border_l']
+TEXT     = SLATE_THEME['text']
+MUTED    = SLATE_THEME['muted']
+ACCENT   = SLATE_THEME['accent']
+GREEN    = SLATE_THEME['green']
+RED      = SLATE_THEME['red']
+AMBER    = SLATE_THEME['amber']
+YELLOW   = SLATE_THEME['amber']
+ORANGE   = '#f97316'
+DIM      = SLATE_THEME['dim']
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
 SIG_DESC   = {
@@ -86,16 +105,16 @@ def get_action_text(rec: str, conviction: str) -> str:
 def get_row_tint(rec: str, conviction: str) -> str:
     if rec == 'BUY':
         if conviction == 'HIGH':
-            return 'rgba(63,185,80,0.10)'
+            return 'rgba(16,185,129,0.10)'
         if conviction == 'MED':
-            return 'rgba(63,185,80,0.06)'
-        return 'rgba(63,185,80,0.03)'
+            return 'rgba(16,185,129,0.06)'
+        return 'rgba(16,185,129,0.03)'
     if rec == 'SELL':
         if conviction == 'HIGH':
-            return 'rgba(248,81,73,0.12)'
-        return 'rgba(248,81,73,0.05)'
+            return 'rgba(239,68,68,0.12)'
+        return 'rgba(239,68,68,0.05)'
     if rec == 'HOLD' and conviction == 'MED':
-        return 'rgba(88,166,255,0.06)'
+        return 'rgba(245,158,11,0.06)'
     return 'transparent'
 
 TAB_STYLE = {
@@ -780,10 +799,10 @@ def build_projection_fig():
                              line=dict(color=YELLOW, dash='dash', width=1.5)))
     fig.add_trace(go.Scatter(x=years, y=[v/1e6 for v in base], name='Base 12%',
                              line=dict(color=ACCENT, width=2.5),
-                             fill='tonexty', fillcolor='rgba(88,166,255,0.09)'))
+                             fill='tonexty', fillcolor='rgba(245,158,11,0.09)'))
     fig.add_trace(go.Scatter(x=years, y=[v/1e6 for v in aggr], name='Optimistic 15%',
                              line=dict(color=GREEN, dash='dash', width=1.5),
-                             fill='tonexty', fillcolor='rgba(63,185,80,0.07)'))
+                             fill='tonexty', fillcolor='rgba(16,185,129,0.07)'))
     fig.add_annotation(x=19.4, y=base[-1]/1e6 + 0.15, text=f'£{base[-1]/1e6:.2f}M',
                        showarrow=False, font=dict(color=ACCENT, size=13, family='monospace'))
     fig.update_layout(
@@ -1355,16 +1374,16 @@ _LOGIN_PAGE = """<!DOCTYPE html>
 <title>ISA Momentum Terminal</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace}
-.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:40px;width:100%;max-width:360px}
-h1{color:#e6edf3;font-size:16px;font-weight:700;margin-bottom:4px;letter-spacing:.5px}
-.sub{color:#8b949e;font-size:11px;margin-bottom:28px}
-label{display:block;color:#8b949e;font-size:11px;margin-bottom:6px}
-input{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:10px 12px;font-family:monospace;font-size:14px;margin-bottom:16px;outline:none}
-input:focus{border-color:#58a6ff}
-button{width:100%;background:#58a6ff;color:#000;border:none;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer}
-button:hover{background:#79baff}
-.err{color:#f85149;font-size:11px;margin-bottom:12px}
+body{background:#0f1117;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace}
+.card{background:#1c2333;border:1px solid #253047;border-radius:10px;padding:40px;width:100%;max-width:360px}
+h1{color:#dde5f0;font-size:16px;font-weight:700;margin-bottom:4px;letter-spacing:.5px}
+.sub{color:#8b9ab0;font-size:11px;margin-bottom:28px}
+label{display:block;color:#8b9ab0;font-size:11px;margin-bottom:6px}
+input{width:100%;background:#0f1117;border:1px solid #253047;border-radius:6px;color:#dde5f0;padding:10px 12px;font-family:monospace;font-size:14px;margin-bottom:16px;outline:none}
+input:focus{border-color:#f59e0b}
+button{width:100%;background:#f59e0b;color:#000;border:none;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer}
+button:hover{background:#fbbf24}
+.err{color:#ef4444;font-size:11px;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -1424,11 +1443,11 @@ app.layout = html.Div([
         html.Div(id='header-updated', style={'color': MUTED, 'fontSize': '11px', 'textAlign': 'right'}),
     ], style={
         'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
-        'padding': '14px 20px', 'background': CARD, 'borderBottom': f'1px solid {BORDER}',
+        'padding': '14px 20px', 'background': SURFACE, 'borderBottom': f'1px solid {BORDER}',
     }),
 
     # ── Macro Regime Strip ────────────────────────────────────────────────────
-    html.Div(id='macro-regime-strip'),
+    html.Div(id='macro-regime-strip', style={'background': SURFACE}),
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     html.Div([
@@ -1807,7 +1826,7 @@ def update_chart(etf, tf, _):
         fig.add_trace(go.Scatter(
             x=rsi_disp.index, y=rsi_disp, name='RSI 14',
             line=dict(color=ACCENT, width=1.5),
-            fill='tozeroy', fillcolor='rgba(88,166,255,0.10)',
+            fill='tozeroy', fillcolor='rgba(245,158,11,0.10)',
         ), row=2, col=1)
         for level, lcolor in [(70, RED), (30, GREEN), (50, BORDER)]:
             fig.add_hline(y=level, line_dash='dot', line_color=lcolor, line_width=1, row=2, col=1)
