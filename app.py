@@ -1397,8 +1397,15 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
             ], style=TD_STYLE)
 
             # SMA POSITION cell
-            vs20_color = GREEN if data['vs20'] == 'Above' else RED
-            vs50_color = GREEN if data['vs50'] == 'Above' else RED
+            vs20_color  = GREEN if data['vs20'] == 'Above' else RED
+            vs50_color  = GREEN if data['vs50'] == 'Above' else RED
+            sma_ext_pct = data.get('pct50')  # (close - sma50) / sma50 * 100, pre-computed
+            if sma_ext_pct is not None:
+                sma_ext_text  = f'{sma_ext_pct:+.1f}% from SMA50'
+                sma_ext_color = (GREEN if sma_ext_pct >= 5
+                                 else AMBER if sma_ext_pct >= 2
+                                 else MUTED if sma_ext_pct >= 0
+                                 else RED)
             sma_cell   = html.Td([
                 html.Div([
                     html.Span('20: ', style={'color': MUTED, 'fontSize': '10px'}),
@@ -1410,6 +1417,8 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                     html.Span(f'{data["sma50"]:.2f}', style={'color': '#d2a8ff', 'fontSize': '12px'}),
                     html.Span('  ' + data['vs50'], style={'color': vs50_color, 'fontSize': '10px'}),
                 ], style={'marginTop': '3px'}),
+                *([html.Div(sma_ext_text, style={'color': sma_ext_color, 'fontSize': '10px', 'marginTop': '3px'})]
+                  if sma_ext_pct is not None else []),
             ], style=TD_STYLE)
 
             # 52W drawdown cell
