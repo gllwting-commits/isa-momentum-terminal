@@ -44,7 +44,8 @@ RS_BENCHMARKS = {
     'FLXK': ('EWY',    None),
 }
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
-TF_BARS    = {'1W': 5, '1M': 21, '3M': 63, '6M': 126, '1Y': 252}
+TF_BARS       = {'1W': 5, '1M': 21, '3M': 63, '6M': 126, '1Y': 252}
+SNAP_TF_BARS  = {'1d': 1, '1w': 5, '1m': 21, '3m': 63, '6m': 126, '1y': 252}
 CHART_TICKERS_ALL = ETFS + ['SPX', 'NDQ']
 _INDICATOR_DAYS = 365
 ISA_ALLOWANCE  = 20_000
@@ -1852,6 +1853,7 @@ app.layout = html.Div([
     dcc.Store(id='sort-mode',     data='daypct'),
     dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI', 'JEDG']),
     dcc.Store(id='chart-mode',    data='price'),
+    dcc.Store(id='snapshot-tf',   data='1d'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1863,9 +1865,9 @@ app.layout = html.Div([
     Input('main-tabs', 'value'),
     [State('selected-etf', 'data'), State('selected-tf', 'data'),
      State('price-period', 'data'), State('chart-tickers', 'data'),
-     State('chart-mode',    'data')],
+     State('chart-mode',   'data'), State('snapshot-tf',   'data')],
 )
-def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode):
+def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode, snap_tf):
     if tab == 'signal-summary':
         period = price_period or 'today'
         return html.Div([
@@ -1950,6 +1952,20 @@ def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode):
                 html.Div(id='price-chart-legend',
                          style={'marginTop': '10px', 'fontSize': '12px', 'fontFamily': 'monospace'}),
             ]),
+            html.Div(
+                [html.Span('Snapshot:', style={
+                    'color': MUTED, 'fontSize': '11px', 'fontFamily': 'monospace',
+                    'marginRight': '8px', 'alignSelf': 'center',
+                })] + [
+                    html.Button(
+                        tf.upper(), id=f'snap-tf-{tf}', n_clicks=0,
+                        style={**toggle_btn_style(tf, snap_tf or '1d'),
+                               **({'marginLeft': '4px'} if i > 0 else {})},
+                    )
+                    for i, tf in enumerate(['1d', '1w', '1m', '3m', '6m', '1y'])
+                ],
+                style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '8px'},
+            ),
             html.Div(id='chart-stats-bars'),
             html.Div(id='chart-conv-cards'),
         ])
@@ -2454,14 +2470,38 @@ def style_chart_ticker_buttons(tickers, mode):
             for t in CHART_TICKERS_ALL]
 
 
+# ── Snapshot timeframe callbacks ──────────────────────────────────────────────
+@app.callback(
+    Output('snapshot-tf', 'data'),
+    [Input(f'snap-tf-{tf}', 'n_clicks') for tf in ['1d', '1w', '1m', '3m', '6m', '1y']],
+    prevent_initial_call=True,
+)
+def set_snapshot_tf(*_args):
+    return dash.callback_context.triggered[0]['prop_id'].split('.')[0].replace('snap-tf-', '')
+
+
+@app.callback(
+    [Output(f'snap-tf-{tf}', 'style') for tf in ['1d', '1w', '1m', '3m', '6m', '1y']],
+    Input('snapshot-tf', 'data'),
+)
+def style_snapshot_tf_buttons(snap_tf):
+    m = snap_tf or '1d'
+    return [
+        {**toggle_btn_style(tf, m), **({'marginLeft': '4px'} if i > 0 else {})}
+        for i, tf in enumerate(['1d', '1w', '1m', '3m', '6m', '1y'])
+    ]
+
+
 # ── Chart snapshot callback (T7) ─────────────────────────────────────────────
 @app.callback(
     [Output('chart-stats-bars', 'children'),
      Output('chart-conv-cards', 'children')],
-    [Input('chart-tickers', 'data'), Input('refresh', 'n_intervals')],
+    [Input('chart-tickers', 'data'), Input('snapshot-tf', 'data'), Input('refresh', 'n_intervals')],
 )
-def update_chart_snapshot(tickers, _):
-    active = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
+def update_chart_snapshot(tickers, snap_tf, _):
+    active  = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
+    snap_tf = snap_tf or '1d'
+    bars    = SNAP_TF_BARS[snap_tf]
 
     etf_data: dict = {}
     cards: list    = []
@@ -2477,25 +2517,26 @@ def update_chart_snapshot(tickers, _):
     if not etf_data:
         return html.Div(), html.Div()
 
-    rsi_e = []; dd_e = []; rs_e = []; day_e = []
-    for etf, d in etf_data.items():
+    # ── RSI row (all timeframes) ────────────────────────────────────────────
+    rsi_e: list = []
+    for etf in active:
+        if etf not in etf_data:
+            continue
         tc  = CHART_COLORS.get(etf, TEXT)
-        rsi = d['rsi']
-        rsi_vc = RED if rsi > 70 else GREEN if rsi < 30 else AMBER if rsi > 55 else MUTED
-        rsi_e.append({'etf': etf, 'val': rsi, 'tcol': tc, 'vcol': rsi_vc, 'dstr': f'{rsi:.1f}'})
-
-        dd = d.get('drawdown')
-        if dd is not None:
-            dd_e.append({'etf': etf, 'val': dd, 'tcol': tc, 'vcol': RED, 'dstr': f'{dd:.1f}%'})
-
-        rs = d.get('rs_ratio')
-        if rs is not None:
-            rs_vc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
-            rs_e.append({'etf': etf, 'val': rs, 'tcol': tc, 'vcol': rs_vc, 'dstr': f'{rs:+.1f}%'})
-
-        day = d['chg_pct']
-        day_vc = GREEN if day > 0 else RED
-        day_e.append({'etf': etf, 'val': day, 'tcol': tc, 'vcol': day_vc, 'dstr': f'{day:+.2f}%'})
+        df  = _get_daily_df(TICKERS[etf])
+        if df.empty or 'RSI' not in df.columns:
+            rsi_val = None
+        else:
+            rsi_s = df['RSI'].dropna()
+            if snap_tf == '1d':
+                rsi_val = float(rsi_s.iloc[-1]) if len(rsi_s) >= 1 else None
+            else:
+                rsi_val = float(rsi_s.iloc[-bars]) if len(rsi_s) >= bars else None
+        if rsi_val is None:
+            rsi_e.append({'etf': etf, 'val': 50, 'tcol': MUTED, 'vcol': MUTED, 'dstr': 'N/A'})
+        else:
+            rsi_vc = RED if rsi_val > 70 else GREEN if rsi_val < 30 else AMBER if rsi_val > 55 else MUTED
+            rsi_e.append({'etf': etf, 'val': rsi_val, 'tcol': tc, 'vcol': rsi_vc, 'dstr': f'{rsi_val:.1f}'})
 
     rsi_track = _build_stat_track(
         'RSI 14', rsi_e, 20, 100,
@@ -2505,39 +2546,115 @@ def update_chart_snapshot(tickers, _):
         ],
         marker_lines=[(30, '#f59e0b', 0.3, 1), (55, '#8b9ab0', 0.25, 1), (70, '#ef4444', 0.5, 2)],
         zone_label_defs=[
-            (0, 12.5, 'oversold <30', '#1e293b'),
-            (12.5, 43.75, 'neutral 30–55', '#1e293b'),
-            (43.75, 62.5, 'momentum 55–70', '#1e293b'),
-            (62.5, 100, 'overbought >70', '#1e293b'),
+            (0, 12.5, 'oversold <30', '#1e293b'), (12.5, 43.75, 'neutral 30–55', '#1e293b'),
+            (43.75, 62.5, 'momentum 55–70', '#1e293b'), (62.5, 100, 'overbought >70', '#1e293b'),
         ],
         axis_labels=('20', 'danger >70', '100'),
     )
-    dd_track = _build_stat_track(
-        '52W Drawdown', dd_e, -25, 0,
-        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
-        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ deeper DD', '#1e293b'), (50, 100, 'shallow DD ►', '#1e293b')],
-        axis_labels=('−25%', '', '0%'),
-    )
-    rs_track = _build_stat_track(
-        'RS Trend 30d', rs_e, -10, 10,
-        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
-        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ lagging', '#1e293b'), (50, 100, 'outperforming ►', '#1e293b')],
-        axis_labels=('−10%', '0', '+10%'),
-    )
-    day_track = _build_stat_track(
-        'Day %', day_e, -3, 3,
-        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
-        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ down', '#1e293b'), (50, 100, 'up ►', '#1e293b')],
-        axis_labels=('−3%', '0', '+3%'),
-    )
+
+    if snap_tf == '1d':
+        # ── 1D: original 4 rows ─────────────────────────────────────────────
+        dd_e: list = []; rs_e: list = []; day_e: list = []
+        for etf, d in etf_data.items():
+            tc = CHART_COLORS.get(etf, TEXT)
+            dd = d.get('drawdown')
+            if dd is not None:
+                dd_e.append({'etf': etf, 'val': dd, 'tcol': tc, 'vcol': RED, 'dstr': f'{dd:.1f}%'})
+            rs = d.get('rs_ratio')
+            if rs is not None:
+                rs_vc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
+                rs_e.append({'etf': etf, 'val': rs, 'tcol': tc, 'vcol': rs_vc, 'dstr': f'{rs:+.1f}%'})
+            day = d['chg_pct']
+            day_vc = GREEN if day > 0 else RED
+            day_e.append({'etf': etf, 'val': day, 'tcol': tc, 'vcol': day_vc, 'dstr': f'{day:+.2f}%'})
+
+        dd_track = _build_stat_track(
+            '52W Drawdown', dd_e, -25, 0,
+            track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+            marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+            zone_label_defs=[(0, 50, '◄ deeper DD', '#1e293b'), (50, 100, 'shallow DD ►', '#1e293b')],
+            axis_labels=('−25%', '', '0%'),
+        )
+        rs_track = _build_stat_track(
+            'RS Trend 30d', rs_e, -10, 10,
+            track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+            marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+            zone_label_defs=[(0, 50, '◄ lagging', '#1e293b'), (50, 100, 'outperforming ►', '#1e293b')],
+            axis_labels=('−10%', '0', '+10%'),
+        )
+        day_track = _build_stat_track(
+            'Day %', day_e, -3, 3,
+            track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+            marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+            zone_label_defs=[(0, 50, '◄ down', '#1e293b'), (50, 100, 'up ►', '#1e293b')],
+            axis_labels=('−3%', '0', '+3%'),
+        )
+        tracks = [rsi_track, dd_track, rs_track, day_track]
+
+    else:
+        # ── Multi-TF: period return + RS vs benchmark ────────────────────────
+        pret_e: list = []; rsp_e: list = []
+        for etf in active:
+            if etf not in etf_data:
+                continue
+            tc    = CHART_COLORS.get(etf, TEXT)
+            df    = _get_daily_df(TICKERS[etf])
+            close = df['Close'].dropna()
+            period_ret = ((close.iloc[-1] / close.iloc[-bars] - 1) * 100
+                          if len(close) >= bars else None)
+            pret_vc = GREEN if (period_ret or 0) > 0 else RED
+            pret_e.append({
+                'etf': etf,
+                'val': period_ret if period_ret is not None else 0,
+                'tcol': tc if period_ret is not None else MUTED,
+                'vcol': pret_vc if period_ret is not None else MUTED,
+                'dstr': f'{period_ret:+.1f}%' if period_ret is not None else 'N/A',
+            })
+
+            rs_period = None
+            if etf in RS_BENCHMARKS and period_ret is not None:
+                bench_s = fetch_benchmark_price(RS_BENCHMARKS[etf][0])
+                if bench_s is not None and len(bench_s) >= bars:
+                    bench_ret = (bench_s.iloc[-1] / bench_s.iloc[-bars] - 1) * 100
+                    rs_period = period_ret - bench_ret
+            rsp_vc = GREEN if (rs_period or 0) > 0 else RED
+            rsp_e.append({
+                'etf': etf,
+                'val': rs_period if rs_period is not None else 0,
+                'tcol': tc if rs_period is not None else MUTED,
+                'vcol': rsp_vc if rs_period is not None else MUTED,
+                'dstr': f'{rs_period:+.1f}%' if rs_period is not None else 'N/A',
+            })
+
+        # Dynamic symmetric scale with 4% margin each side (spec: ±46% of scale)
+        pret_vals  = [e['val'] for e in pret_e if e['dstr'] != 'N/A']
+        pret_abs   = max(abs(v) for v in pret_vals) if pret_vals else 1.0
+        pret_scale = pret_abs * 50 / 46
+
+        rsp_vals  = [e['val'] for e in rsp_e if e['dstr'] != 'N/A']
+        rsp_abs   = max(abs(v) for v in rsp_vals) if rsp_vals else 1.0
+        rsp_scale = rsp_abs * 50 / 46
+
+        pret_track = _build_stat_track(
+            'Period Return', pret_e, -pret_scale, pret_scale,
+            track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+            marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+            zone_label_defs=[(0, 50, '← loss', '#1e293b'), (50, 100, 'gain →', '#1e293b')],
+            axis_labels=('← loss', '0', 'gain →'),
+        )
+        rsp_track = _build_stat_track(
+            'RS vs Benchmark', rsp_e, -rsp_scale, rsp_scale,
+            track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+            marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+            zone_label_defs=[(0, 50, '← lagging', '#1e293b'), (50, 100, 'outperforming →', '#1e293b')],
+            axis_labels=('← lagging', '0', 'outperforming →'),
+        )
+        tracks = [rsi_track, pret_track, rsp_track]
 
     stats_section = card([
         html.P('Snapshot', style={'color': '#1e293b', 'fontSize': '11px', 'fontWeight': '600',
                                    'letterSpacing': '0.5px', 'margin': '0 0 16px 0'}),
-        rsi_track, dd_track, rs_track, day_track,
+        *tracks,
     ], {'background': '#f0f4ff', 'border': '1px solid #c7d2fe'})
     cards_section = card(html.Div(cards, style={
         'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px',
