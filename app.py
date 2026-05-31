@@ -909,6 +909,101 @@ TD_STYLE = {
 }
 
 
+# ── Charts tab snapshot helpers ───────────────────────────────────────────────
+def _stat_bar_row(etf: str, ticker_color: str, label: str,
+                  value: float, display_str: str, bar_color: str,
+                  max_range: float = 10.0) -> html.Div:
+    fill_pct  = min(100, abs(value) / max_range * 100) if max_range > 0 else 0
+    is_pos    = value >= 0
+    neg_bar = html.Div(
+        html.Div(style={
+            'width': f'{fill_pct:.0f}%', 'height': '6px',
+            'background': bar_color if not is_pos else 'transparent',
+            'borderRadius': '2px', 'marginLeft': 'auto',
+        }),
+        style={'width': '90px', 'height': '6px', 'background': DIM,
+               'borderRadius': '2px 0 0 2px', 'overflow': 'hidden'},
+    )
+    pos_bar = html.Div(
+        html.Div(style={
+            'width': f'{fill_pct:.0f}%', 'height': '6px',
+            'background': bar_color if is_pos else 'transparent',
+            'borderRadius': '2px',
+        }),
+        style={'width': '90px', 'height': '6px', 'background': DIM,
+               'borderRadius': '0 2px 2px 0', 'overflow': 'hidden'},
+    )
+    return html.Div([
+        html.Span([
+            html.Span('●', style={'color': ticker_color, 'fontSize': '8px', 'marginRight': '3px'}),
+            html.Span(etf, style={'color': MUTED, 'fontSize': '10px', 'fontWeight': '600'}),
+        ], style={'width': '52px', 'flexShrink': '0', 'fontFamily': 'monospace'}),
+        html.Span(label, style={'color': DIM, 'fontSize': '10px', 'width': '60px',
+                                'flexShrink': '0', 'fontFamily': 'monospace'}),
+        html.Div([
+            neg_bar,
+            html.Div(style={'width': '2px', 'height': '14px', 'background': BORDER_L, 'flexShrink': '0'}),
+            pos_bar,
+        ], style={'display': 'flex', 'alignItems': 'center'}),
+        html.Span(display_str, style={
+            'color': bar_color, 'fontSize': '11px', 'fontFamily': 'monospace',
+            'fontWeight': '600', 'marginLeft': '8px', 'minWidth': '58px', 'textAlign': 'right',
+        }),
+    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'})
+
+
+def _conv_card(etf: str, data: dict) -> html.Div:
+    weight     = ETF_WEIGHTS.get(etf, 0.0)
+    conv       = data['conviction']
+    rec        = data['rec']
+    conv_color = CONVICTION_COLOR[conv]
+    rec_color  = REC_COLOR[rec]
+    t_color    = CHART_COLORS.get(etf, TEXT)
+    rs_trend   = data.get('rs_ratio')
+    entry_val  = (f'{data["sma20"]:.2f}' if rec == 'BUY' else
+                  'Avoid' if rec == 'SELL' else f'{data["sma50"]:.2f}')
+    rs_el = []
+    if rs_trend is not None:
+        rs_c  = GREEN if rs_trend > 1.5 else RED if rs_trend < -1.5 else AMBER
+        rs_el = [html.Div([
+            html.Span('RS: ', style={'color': MUTED, 'fontSize': '10px'}),
+            html.Span(f'{rs_trend:+.1f}%',
+                      style={'color': rs_c, 'fontSize': '10px', 'fontWeight': '600'}),
+        ], style={'marginTop': '2px', 'fontFamily': 'monospace'})]
+    return html.Div([
+        html.Div([
+            html.Span('●', style={'color': t_color, 'marginRight': '4px', 'fontSize': '10px'}),
+            html.Span(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '13px'}),
+            html.Span(f'  {weight:.1f}%', style={'color': MUTED, 'fontSize': '11px'}),
+        ], style={'marginBottom': '8px', 'fontFamily': 'monospace'}),
+        html.Span(conv, style={
+            'background': conv_color + '22', 'color': conv_color,
+            'border': f'1px solid {conv_color}',
+            'padding': '1px 8px', 'borderRadius': '20px',
+            'fontWeight': '700', 'fontSize': '10px',
+        }),
+        html.Div(get_action_text(rec, conv), style={
+            'color': rec_color, 'fontSize': '11px', 'fontWeight': '600',
+            'marginTop': '8px', 'borderLeft': f'3px solid {rec_color}',
+            'paddingLeft': '6px', 'fontFamily': 'monospace',
+        }),
+        html.Div([
+            html.Span('Entry: ', style={'color': MUTED, 'fontSize': '10px'}),
+            html.Span(entry_val, style={'color': TEXT, 'fontSize': '10px', 'fontWeight': '600'}),
+        ], style={'marginTop': '6px', 'fontFamily': 'monospace'}),
+        html.Div([
+            html.Span('SMA: ', style={'color': MUTED, 'fontSize': '10px'}),
+            html.Span(f'{data["vs20"]} 20 · {data["vs50"]} 50',
+                      style={'color': TEXT, 'fontSize': '10px'}),
+        ], style={'marginTop': '2px', 'fontFamily': 'monospace'}),
+        *rs_el,
+    ], style={
+        'background': SURFACE, 'border': f'1px solid {BORDER}',
+        'borderRadius': '8px', 'padding': '12px',
+        'flex': '1', 'minWidth': '155px', 'maxWidth': '220px',
+    })
+
+
 # ── Signal Summary table ──────────────────────────────────────────────────────
 def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
     vals = closes.dropna().tolist()
@@ -1702,6 +1797,8 @@ def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode):
                 html.Div(id='price-chart-legend',
                          style={'marginTop': '10px', 'fontSize': '12px', 'fontFamily': 'monospace'}),
             ]),
+            html.Div(id='chart-stats-bars'),
+            html.Div(id='chart-conv-cards'),
         ])
 
     # ISA & Retirement
@@ -2202,6 +2299,64 @@ def style_chart_ticker_buttons(tickers, mode):
     return [_chart_ticker_btn_style(t, t in selected,
                                     greyed=(rsi_mode and t in ('SPX', 'NDQ')))
             for t in CHART_TICKERS_ALL]
+
+
+# ── Chart snapshot callback (T7) ─────────────────────────────────────────────
+@app.callback(
+    [Output('chart-stats-bars', 'children'),
+     Output('chart-conv-cards', 'children')],
+    [Input('chart-tickers', 'data'), Input('refresh', 'n_intervals')],
+)
+def update_chart_snapshot(tickers, _):
+    active = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
+
+    stat_rows = []
+    cards     = []
+
+    for etf in active:
+        proxy = WTAI_VOL_PROXY if etf == 'WTAI' else None
+        data  = fetch_latest(TICKERS[etf], vol_proxy=proxy)
+        if data is None:
+            continue
+        data['rs_ratio'] = fetch_rs_ratio(etf)
+        t_color = CHART_COLORS.get(etf, TEXT)
+
+        rsi    = data['rsi']
+        rsi_bc = RED if rsi > 70 else GREEN if rsi < 30 else AMBER if rsi > 55 else MUTED
+        stat_rows.append(_stat_bar_row(etf, t_color, 'RSI 14',
+                                       rsi - 50, f'{rsi:.1f}', rsi_bc, max_range=50))
+
+        dd = data.get('drawdown')
+        if dd is not None:
+            dd_bc = GREEN if dd > -5 else AMBER if dd > -10 else RED
+            stat_rows.append(_stat_bar_row(etf, t_color, '52W DD',
+                                           dd, f'{dd:.1f}%', dd_bc, max_range=25))
+
+        rs = data.get('rs_ratio')
+        if rs is not None:
+            rs_bc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
+            stat_rows.append(_stat_bar_row(etf, t_color, 'RS 30d',
+                                           rs, f'{rs:+.1f}%', rs_bc, max_range=10))
+
+        day_pct = data['chg_pct']
+        day_bc  = GREEN if day_pct > 0 else RED
+        stat_rows.append(_stat_bar_row(etf, t_color, 'Day%',
+                                       day_pct, f'{day_pct:+.2f}%', day_bc, max_range=3))
+
+        cards.append(_conv_card(etf, data))
+
+    if not stat_rows:
+        return html.Div(), html.Div()
+
+    stats_section = card([
+        html.P('Snapshot', style={'color': MUTED, 'fontSize': '11px', 'fontWeight': '600',
+                                   'letterSpacing': '0.5px', 'margin': '0 0 10px 0'}),
+        *stat_rows,
+    ])
+    cards_section = card(html.Div(cards, style={
+        'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px',
+    }))
+    return stats_section, cards_section
 
 
 # ── ISA callback ──────────────────────────────────────────────────────────────
