@@ -1981,9 +1981,10 @@ def update_price_chart(tickers, tf, _, mode):
             rsi_s = df['RSI'].dropna().iloc[-bars:]
             if len(rsi_s) < 2:
                 continue
-            rsi_data.append((ticker, color, rsi_s, float(rsi_s.iloc[-1])))
-        rsi_data.sort(key=lambda x: x[3], reverse=True)
-        for ticker, color, rsi_s, current_rsi in rsi_data:
+            rsi_data.append((ticker, color, rsi_s))
+        rsi_data.sort(key=lambda x: float(x[2].iloc[-1]), reverse=True)
+        for ticker, color, rsi_s in rsi_data:
+            current_rsi = float(rsi_s.iloc[-1])
             fig.add_trace(go.Scatter(
                 x=rsi_s.index, y=rsi_s.values,
                 name=ticker, mode='lines',
