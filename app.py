@@ -25,6 +25,20 @@ ETF_NAMES = {
     'SGLS': 'Invesco Physical Gold ETC (GBP Hedged)',
     'FLXK': 'Franklin FTSE Korea',
 }
+
+WATCHLIST = ['AIAI', 'ISPY', 'INRG', 'NUKZ', 'NATO', 'ROBO', 'RBTX', 'EMQQ', 'NDIA', 'HEAL']
+WATCHLIST_TICKERS = {
+    'AIAI': 'AIAI.L', 'ISPY': 'ISPY.L', 'INRG': 'INRG.L', 'NUKZ': 'NUKZ.L',
+    'NATO': 'NATO.L', 'ROBO': 'ROBO.L', 'RBTX': 'RBTX.L', 'EMQQ': 'EMQQ.L',
+    'NDIA': 'NDIA.L', 'HEAL': 'HEAL.L',
+}
+WATCHLIST_NAMES = {
+    'AIAI': 'AI / Technology',    'ISPY': 'Cybersecurity',
+    'INRG': 'Clean Energy',       'NUKZ': 'Nuclear',
+    'NATO': 'Defence',            'ROBO': 'Robotics',
+    'RBTX': 'Robotics Alt',       'EMQQ': 'Emerging Markets',
+    'NDIA': 'India',              'HEAL': 'Healthcare',
+}
 VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'SEMI', 'FLXK']
 WTAI_VOL_PROXY = 'AIAG.L'
 ETF_WEIGHTS    = {
@@ -638,6 +652,55 @@ def fetch_rate_beta(etf: str) -> 'float | None':
             return None
         slope = np.polyfit(aligned['tnx'].values, aligned['etf'].values, 1)[0]
         return round(float(slope), 2)
+    except Exception:
+        return None
+
+
+def fetch_radar_ticker(ticker_str: str) -> 'dict | None':
+    """Fetch radar signal data for a single watchlist ticker. Returns None on failure."""
+    try:
+        df = _get_daily_df(ticker_str)
+        if df is None or df.empty:
+            return None
+
+        # RSI crossover: currently above 60, was below 60 within prior 5 bars
+        rsi_s = df['RSI'].dropna()
+        if len(rsi_s) < 6:
+            return None
+        rsi_now   = float(rsi_s.iloc[-1])
+        rsi_cross = rsi_now > 60 and float(rsi_s.iloc[-6:-1].min()) < 60
+
+        # 52W drawdown — use High.max() per architectural rule
+        high_52w  = float(df['High'].max())
+        close_now = float(df['Close'].dropna().iloc[-1])
+        drawdown  = (close_now - high_52w) / high_52w * 100
+
+        # RS vs SWDA.L — 30d pct change of ratio
+        swda_df = _get_daily_df('SWDA.L')
+        rs_30d  = None
+        if swda_df is not None and not swda_df.empty:
+            etf_close        = df['Close'].dropna().squeeze()
+            swda_close       = swda_df['Close'].dropna().squeeze()
+            etf_close.index  = pd.to_datetime(etf_close.index).normalize()
+            swda_close.index = pd.to_datetime(swda_close.index).normalize()
+            merged = pd.merge(
+                etf_close.rename('etf'), swda_close.rename('swda'),
+                left_index=True, right_index=True, how='inner',
+            )
+            if len(merged) >= 32:
+                ratio  = merged['etf'] / merged['swda']
+                rs_30d = float((ratio.iloc[-1] / ratio.iloc[-31] - 1) * 100)
+
+        signal = (
+            rsi_cross and
+            rs_30d is not None and rs_30d > 1.5 and
+            drawdown > -15.0
+        )
+        return {
+            'rsi': rsi_now, 'rsi_cross': rsi_cross,
+            'drawdown': drawdown, 'rs_30d': rs_30d,
+            'signal': signal,
+        }
     except Exception:
         return None
 
@@ -1942,6 +2005,8 @@ app.layout = html.Div([
                         style=TAB_STYLE, selected_style=TAB_SELECTED),
                 dcc.Tab(label='ISA & Retirement', value='isa',
                         style=TAB_STYLE, selected_style=TAB_SELECTED),
+                dcc.Tab(label='Radar',            value='radar',
+                        style=TAB_STYLE, selected_style=TAB_SELECTED),
             ],
             colors={'border': BORDER, 'primary': ACCENT, 'background': BG},
         ),
@@ -1963,6 +2028,62 @@ app.layout = html.Div([
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], id='app-root', style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
+
+
+# ── Radar tab ─────────────────────────────────────────────────────────────────
+def build_radar_table(rows: list) -> html.Table:
+    header = html.Tr([
+        html.Th(h, style={**TH_STYLE})
+        for h in ['ETF', 'NAME', 'RSI 14', 'RS vs SWDA', '52W DD', 'SIGNAL']
+    ])
+    trs = []
+    for row in rows:
+        etf  = row['etf']
+        data = row['data']
+        if data is None:
+            trs.append(html.Tr([
+                html.Td(etf,                   style={**TD_STYLE, 'color': TEXT, 'fontWeight': '700'}),
+                html.Td(WATCHLIST_NAMES[etf],  style={**TD_STYLE, 'color': MUTED}),
+                html.Td('data unavailable', colSpan=4,
+                        style={**TD_STYLE, 'color': MUTED, 'fontStyle': 'italic'}),
+            ], style={'borderBottom': f'1px solid {BORDER}'}))
+            continue
+        row_border = f'3px solid {GREEN}' if data['signal'] else '3px solid transparent'
+        rsi_c   = GREEN if data['rsi_cross'] else (AMBER if data['rsi'] > 60 else MUTED)
+        rsi_cell = html.Td([
+            html.Div(f'{data["rsi"]:.0f}',
+                     style={'color': rsi_c, 'fontWeight': '700', 'fontSize': '13px'}),
+            html.Div('crossed ↑' if data['rsi_cross'] else '—',
+                     style={'color': rsi_c, 'fontSize': '10px', 'marginTop': '2px'}),
+        ], style=TD_STYLE)
+        rs_val  = data['rs_30d']
+        if rs_val is None:
+            rs_c, rs_txt = MUTED, '—'
+        else:
+            rs_c   = GREEN if rs_val > 1.5 else (RED if rs_val < 0 else AMBER)
+            rs_txt = f'{rs_val:+.1f}%'
+        rs_cell  = html.Td(rs_txt, style={**TD_STYLE, 'color': rs_c,
+                                          'fontWeight': '700', 'fontSize': '13px'})
+        dd       = data['drawdown']
+        dd_c     = GREEN if dd > -5 else (RED if dd < -15 else AMBER)
+        dd_cell  = html.Td(f'{dd:.1f}%', style={**TD_STYLE, 'color': dd_c,
+                                                 'fontWeight': '700', 'fontSize': '13px'})
+        sig_cell = html.Td(
+            '✓ ENTRY' if data['signal'] else '—',
+            style={**TD_STYLE,
+                   'color': GREEN if data['signal'] else MUTED,
+                   'fontWeight': '700' if data['signal'] else '400',
+                   'fontSize': '13px'},
+        )
+        trs.append(html.Tr([
+            html.Td(etf, style={**TD_STYLE, 'color': TEXT,
+                                'fontWeight': '700', 'fontSize': '14px',
+                                'borderLeft': row_border}),
+            html.Td(WATCHLIST_NAMES[etf], style={**TD_STYLE, 'color': MUTED, 'fontSize': '11px'}),
+            rsi_cell, rs_cell, dd_cell, sig_cell,
+        ], style={'borderBottom': f'1px solid {BORDER}'}))
+    return html.Table([html.Thead(header), html.Tbody(trs)],
+                      style={'width': '100%', 'borderCollapse': 'collapse'})
 
 
 # ── Tab router ────────────────────────────────────────────────────────────────
@@ -2074,6 +2195,20 @@ def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode, sn
             ),
             html.Div(id='chart-stats-bars'),
             html.Div(id='chart-conv-cards'),
+        ])
+
+    if tab == 'radar':
+        radar_rows = [
+            {'etf': etf, 'data': fetch_radar_ticker(WATCHLIST_TICKERS[etf])}
+            for etf in WATCHLIST
+        ]
+        return card([
+            html.H2('Radar — Momentum Entry Scanner',
+                    style={'color': TEXT, 'margin': '0 0 4px 0',
+                           'fontSize': '15px', 'fontWeight': '700'}),
+            html.P('RSI crossed above 60 · RS vs SWDA positive · 52W DD better than −15%',
+                   style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
+            build_radar_table(radar_rows),
         ])
 
     # ISA & Retirement
