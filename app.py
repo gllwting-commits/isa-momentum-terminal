@@ -910,46 +910,199 @@ TD_STYLE = {
 
 
 # ── Charts tab snapshot helpers ───────────────────────────────────────────────
-def _stat_bar_row(etf: str, ticker_color: str, label: str,
-                  value: float, display_str: str, bar_color: str,
-                  max_range: float = 10.0) -> html.Div:
-    fill_pct  = min(100, abs(value) / max_range * 100) if max_range > 0 else 0
-    is_pos    = value >= 0
-    neg_bar = html.Div(
-        html.Div(style={
-            'width': f'{fill_pct:.0f}%', 'height': '6px',
-            'background': bar_color if not is_pos else 'transparent',
-            'borderRadius': '2px', 'marginLeft': 'auto',
-        }),
-        style={'width': '90px', 'height': '6px', 'background': DIM,
-               'borderRadius': '2px 0 0 2px', 'overflow': 'hidden'},
-    )
-    pos_bar = html.Div(
-        html.Div(style={
-            'width': f'{fill_pct:.0f}%', 'height': '6px',
-            'background': bar_color if is_pos else 'transparent',
-            'borderRadius': '2px',
-        }),
-        style={'width': '90px', 'height': '6px', 'background': DIM,
-               'borderRadius': '0 2px 2px 0', 'overflow': 'hidden'},
-    )
+_LANE_H     = 14   # px between dot lane centres
+_DOT_R      = 5    # dot radius px
+_LABEL_H    = 22   # px per staircase step
+_LABEL_PROX = 8    # % proximity threshold for label stagger
+
+
+def _build_stat_track(
+    stat_label: str,
+    entries: list,            # [{'etf','val','tcol','vcol','dstr'}, …]
+    min_val: float,
+    max_val: float,
+    track_zones: list,        # [(start_pct, end_pct, color), …]
+    marker_lines: list = None,       # [(value, color, opacity, width_px), …]
+    zone_label_defs: list = None,    # [(start_pct, end_pct, text, color), …]
+    axis_labels: tuple = None,       # (left_str, center_str, right_str)
+) -> html.Div:
+    n = len(entries)
+    if n == 0:
+        return html.Div()
+
+    sorted_e = sorted(entries, key=lambda x: x['val'])
+    for i, e in enumerate(sorted_e):
+        e['lane_idx'] = i
+
+    dot_area_h   = n * _LANE_H + 8
+    ZONE_LBL_H   = 18 if zone_label_defs else 0
+    AXIS_H       = 14 if axis_labels else 0
+    dot_area_y   = ZONE_LBL_H
+    track_y_in_dot = int(np.ceil(n / 2)) * _LANE_H
+    track_abs_y  = dot_area_y + track_y_in_dot - 2
+    axis_y       = dot_area_y + dot_area_h
+    label_area_y = axis_y + AXIS_H
+
+    for e in sorted_e:
+        e['dot_y'] = dot_area_y + (e['lane_idx'] + 0.5) * _LANE_H + 4
+
+    def val_to_pct(v: float) -> float:
+        if max_val == min_val:
+            return 50.0
+        return max(0.0, min(100.0, (v - min_val) / (max_val - min_val) * 100.0))
+
+    for e in sorted_e:
+        e['pct'] = val_to_pct(e['val'])
+
+    placed: list = []
+    for e in sorted_e:
+        lvl = 0
+        while any(abs(x['pct'] - e['pct']) < _LABEL_PROX and x['level'] == lvl
+                  for x in placed):
+            lvl += 1
+        e['level'] = lvl
+        placed.append(e)
+
+    max_level    = max(e['level'] for e in sorted_e)
+    label_area_h = (max_level + 1) * _LABEL_H + 10
+    total_h      = label_area_y + label_area_h
+
+    kids: list = []
+
+    # Zone labels above track
+    if zone_label_defs:
+        for sp, ep, text, color in zone_label_defs:
+            mid = (sp + ep) / 2
+            kids.append(html.Span(text, style={
+                'position': 'absolute', 'zIndex': '1',
+                'top': '0px',
+                'left': f'{mid:.2f}%', 'transform': 'translateX(-50%)',
+                'color': color, 'fontSize': '9px', 'fontFamily': 'monospace',
+                'whiteSpace': 'nowrap',
+            }))
+
+    # Track base (DIM)
+    kids.append(html.Div(style={
+        'position': 'absolute', 'zIndex': '2',
+        'left': '0', 'right': '0',
+        'top': f'{track_abs_y}px', 'height': '4px',
+        'background': DIM, 'borderRadius': '2px',
+    }))
+    # Coloured zone segments
+    for sp, ep, tz_col in track_zones:
+        kids.append(html.Div(style={
+            'position': 'absolute', 'zIndex': '3',
+            'left': f'{sp:.2f}%', 'width': f'{ep - sp:.2f}%',
+            'top': f'{track_abs_y}px', 'height': '4px',
+            'background': tz_col,
+        }))
+
+    # Vertical marker lines (span dot area height)
+    if marker_lines:
+        for mval, mcol, mopa, mw in marker_lines:
+            mpct = val_to_pct(mval)
+            kids.append(html.Div(style={
+                'position': 'absolute', 'zIndex': '4',
+                'left': f'calc({mpct:.2f}% - {mw / 2:.1f}px)',
+                'top': f'{dot_area_y}px',
+                'width': f'{mw}px', 'height': f'{dot_area_h}px',
+                'background': mcol, 'opacity': str(mopa),
+            }))
+
+    # Axis labels
+    if axis_labels:
+        left_l, center_l, right_l = axis_labels
+        ay = axis_y + 1
+        kids += [
+            html.Span(left_l, style={
+                'position': 'absolute', 'top': f'{ay}px', 'left': '0',
+                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+            }),
+            html.Span(center_l, style={
+                'position': 'absolute', 'top': f'{ay}px', 'left': '50%',
+                'transform': 'translateX(-50%)',
+                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+            }),
+            html.Span(right_l, style={
+                'position': 'absolute', 'top': f'{ay}px', 'right': '0',
+                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+            }),
+        ]
+
+    # Dots, connectors, label pills
+    for e in sorted_e:
+        pct   = e['pct']
+        dy    = e['dot_y']
+        lbl_y = label_area_y + 4 + e['level'] * _LABEL_H
+
+        # Connector line from dot bottom to label pill
+        conn_top = dy + _DOT_R + 1
+        conn_bot = lbl_y - 4
+        conn_h   = conn_bot - conn_top
+        if conn_h > 2:
+            kids.append(html.Div(style={
+                'position': 'absolute', 'zIndex': '5',
+                'left': f'calc({pct:.2f}% - 0.5px)',
+                'top': f'{conn_top}px',
+                'width': '1px', 'height': f'{conn_h}px',
+                'background': e['tcol'], 'opacity': '0.35',
+            }))
+            kids.append(html.Span('▾', style={
+                'position': 'absolute', 'zIndex': '5',
+                'left': f'calc({pct:.2f}% - 4px)',
+                'top': f'{conn_bot - 1}px',
+                'color': e['tcol'], 'fontSize': '8px',
+                'opacity': '0.5', 'lineHeight': '1',
+            }))
+
+        # Dot (title attr gives browser-native hover tooltip)
+        kids.append(html.Div(
+            title=f'{e["etf"]}: {e["dstr"]}',
+            style={
+                'position': 'absolute', 'zIndex': '10',
+                'left': f'calc({pct:.2f}% - {_DOT_R}px)',
+                'top': f'{dy - _DOT_R}px',
+                'width': f'{_DOT_R * 2}px', 'height': f'{_DOT_R * 2}px',
+                'borderRadius': '50%',
+                'background': e['tcol'],
+                'border': '2px solid white',
+                'boxShadow': '0 1px 4px rgba(0,0,0,0.5)',
+                'cursor': 'pointer',
+            }
+        ))
+
+        # Label pill (always visible, centred on dot x)
+        kids.append(html.Div([
+            html.Span(e['etf'], style={
+                'fontWeight': '700', 'color': '#0f1117',
+                'fontSize': '10px', 'marginRight': '3px',
+                'fontFamily': 'monospace',
+            }),
+            html.Span(e['dstr'], style={
+                'color': e['vcol'], 'fontSize': '10px',
+                'fontFamily': 'monospace', 'fontWeight': '600',
+            }),
+        ], style={
+            'position': 'absolute', 'zIndex': '20',
+            'left': f'{pct:.2f}%', 'transform': 'translateX(-50%)',
+            'top': f'{lbl_y}px',
+            'background': e['tcol'] + '1f',
+            'border': f'1px solid {e["tcol"]}70',
+            'borderRadius': '10px', 'padding': '2px 7px',
+            'whiteSpace': 'nowrap', 'userSelect': 'none',
+        }))
+
     return html.Div([
-        html.Span([
-            html.Span('●', style={'color': ticker_color, 'fontSize': '8px', 'marginRight': '3px'}),
-            html.Span(etf, style={'color': MUTED, 'fontSize': '10px', 'fontWeight': '600'}),
-        ], style={'width': '52px', 'flexShrink': '0', 'fontFamily': 'monospace'}),
-        html.Span(label, style={'color': DIM, 'fontSize': '10px', 'width': '60px',
-                                'flexShrink': '0', 'fontFamily': 'monospace'}),
-        html.Div([
-            neg_bar,
-            html.Div(style={'width': '2px', 'height': '14px', 'background': BORDER_L, 'flexShrink': '0'}),
-            pos_bar,
-        ], style={'display': 'flex', 'alignItems': 'center'}),
-        html.Span(display_str, style={
-            'color': bar_color, 'fontSize': '11px', 'fontFamily': 'monospace',
-            'fontWeight': '600', 'marginLeft': '8px', 'minWidth': '58px', 'textAlign': 'right',
+        html.Div(stat_label, style={
+            'color': MUTED, 'fontSize': '11px', 'fontWeight': '600',
+            'fontFamily': 'monospace', 'marginBottom': '4px',
+            'letterSpacing': '0.5px',
         }),
-    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'})
+        html.Div(kids, style={
+            'position': 'relative', 'width': '100%',
+            'height': f'{total_h}px', 'overflow': 'visible',
+        }),
+    ], style={'marginBottom': '24px'})
 
 
 def _conv_card(etf: str, data: dict) -> html.Div:
@@ -2310,48 +2463,81 @@ def style_chart_ticker_buttons(tickers, mode):
 def update_chart_snapshot(tickers, _):
     active = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
 
-    stat_rows = []
-    cards     = []
-
+    etf_data: dict = {}
+    cards: list    = []
     for etf in active:
         proxy = WTAI_VOL_PROXY if etf == 'WTAI' else None
         data  = fetch_latest(TICKERS[etf], vol_proxy=proxy)
         if data is None:
             continue
         data['rs_ratio'] = fetch_rs_ratio(etf)
-        t_color = CHART_COLORS.get(etf, TEXT)
-
-        rsi    = data['rsi']
-        rsi_bc = RED if rsi > 70 else GREEN if rsi < 30 else AMBER if rsi > 55 else MUTED
-        stat_rows.append(_stat_bar_row(etf, t_color, 'RSI 14',
-                                       rsi - 50, f'{rsi:.1f}', rsi_bc, max_range=50))
-
-        dd = data.get('drawdown')
-        if dd is not None:
-            dd_bc = GREEN if dd > -5 else AMBER if dd > -10 else RED
-            stat_rows.append(_stat_bar_row(etf, t_color, '52W DD',
-                                           dd, f'{dd:.1f}%', dd_bc, max_range=25))
-
-        rs = data.get('rs_ratio')
-        if rs is not None:
-            rs_bc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
-            stat_rows.append(_stat_bar_row(etf, t_color, 'RS 30d',
-                                           rs, f'{rs:+.1f}%', rs_bc, max_range=10))
-
-        day_pct = data['chg_pct']
-        day_bc  = GREEN if day_pct > 0 else RED
-        stat_rows.append(_stat_bar_row(etf, t_color, 'Day%',
-                                       day_pct, f'{day_pct:+.2f}%', day_bc, max_range=3))
-
+        etf_data[etf]    = data
         cards.append(_conv_card(etf, data))
 
-    if not stat_rows:
+    if not etf_data:
         return html.Div(), html.Div()
+
+    rsi_e = []; dd_e = []; rs_e = []; day_e = []
+    for etf, d in etf_data.items():
+        tc  = CHART_COLORS.get(etf, TEXT)
+        rsi = d['rsi']
+        rsi_vc = RED if rsi > 70 else GREEN if rsi < 30 else AMBER if rsi > 55 else MUTED
+        rsi_e.append({'etf': etf, 'val': rsi, 'tcol': tc, 'vcol': rsi_vc, 'dstr': f'{rsi:.1f}'})
+
+        dd = d.get('drawdown')
+        if dd is not None:
+            dd_e.append({'etf': etf, 'val': dd, 'tcol': tc, 'vcol': RED, 'dstr': f'{dd:.1f}%'})
+
+        rs = d.get('rs_ratio')
+        if rs is not None:
+            rs_vc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
+            rs_e.append({'etf': etf, 'val': rs, 'tcol': tc, 'vcol': rs_vc, 'dstr': f'{rs:+.1f}%'})
+
+        day = d['chg_pct']
+        day_vc = GREEN if day > 0 else RED
+        day_e.append({'etf': etf, 'val': day, 'tcol': tc, 'vcol': day_vc, 'dstr': f'{day:+.2f}%'})
+
+    rsi_track = _build_stat_track(
+        'RSI 14', rsi_e, 20, 100,
+        track_zones=[
+            (0, 12.5, '#bbf7d0'), (12.5, 43.75, '#fef9c3'),
+            (43.75, 62.5, '#e0f2fe'), (62.5, 100, '#fecaca'),
+        ],
+        marker_lines=[(30, '#f59e0b', 0.3, 1), (55, '#8b9ab0', 0.25, 1), (70, '#ef4444', 0.5, 2)],
+        zone_label_defs=[
+            (0, 12.5, 'oversold <30', '#10b981'),
+            (12.5, 43.75, 'neutral 30–55', '#f59e0b'),
+            (43.75, 62.5, 'momentum 55–70', '#93c5fd'),
+            (62.5, 100, 'overbought >70', '#ef4444'),
+        ],
+        axis_labels=('20', 'danger >70', '100'),
+    )
+    dd_track = _build_stat_track(
+        '52W Drawdown', dd_e, -25, 0,
+        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+        zone_label_defs=[(0, 50, '◄ deeper DD', MUTED), (50, 100, 'shallow DD ►', MUTED)],
+        axis_labels=('−25%', '', '0%'),
+    )
+    rs_track = _build_stat_track(
+        'RS Trend 30d', rs_e, -10, 10,
+        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+        zone_label_defs=[(0, 50, '◄ lagging', MUTED), (50, 100, 'outperforming ►', MUTED)],
+        axis_labels=('−10%', '0', '+10%'),
+    )
+    day_track = _build_stat_track(
+        'Day %', day_e, -3, 3,
+        track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
+        marker_lines=[(0, '#8b9ab0', 0.2, 2)],
+        zone_label_defs=[(0, 50, '◄ down', MUTED), (50, 100, 'up ►', MUTED)],
+        axis_labels=('−3%', '0', '+3%'),
+    )
 
     stats_section = card([
         html.P('Snapshot', style={'color': MUTED, 'fontSize': '11px', 'fontWeight': '600',
-                                   'letterSpacing': '0.5px', 'margin': '0 0 10px 0'}),
-        *stat_rows,
+                                   'letterSpacing': '0.5px', 'margin': '0 0 16px 0'}),
+        rsi_track, dd_track, rs_track, day_track,
     ])
     cards_section = card(html.Div(cards, style={
         'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px',
