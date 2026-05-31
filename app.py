@@ -27,6 +27,10 @@ ETF_NAMES = {
 }
 VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'SEMI', 'FLXK']
 WTAI_VOL_PROXY = 'AIAG.L'
+ETF_WEIGHTS    = {
+    'SEMG': 51.39, 'WTAI': 15.02, 'VDPG': 11.41,
+    'SGLS': 10.80, 'JEDG':  6.10, 'FLXK':  5.28, 'SEMI': 0.0,
+}
 # RS ratio pairs: etf → (benchmark_ticker, fx)
 # fx='div': bench is USD, ETF is GBP → bench_gbp = bench_usd / GBPUSD
 # fx='mul': bench is GBP, ETF is USD → bench_usd = bench_gbp * GBPUSD
@@ -774,6 +778,17 @@ def _view_btn_style(this_val: str, current_val: str) -> dict:
     }
 
 
+def _sort_btn_style(btn_mode: str, current_mode: str) -> dict:
+    active = btn_mode == current_mode
+    return {
+        'background': ACCENT if active else 'transparent',
+        'color': '#000' if active else MUTED,
+        'border': f'1px solid {ACCENT if active else BORDER}',
+        'borderRadius': '4px', 'padding': '3px 8px', 'cursor': 'pointer',
+        'fontFamily': 'monospace', 'fontSize': '11px', 'fontWeight': '600',
+    }
+
+
 def card(children, extra_style=None):
     s = {'background': CARD, 'border': f'1px solid {BORDER}',
          'borderRadius': '10px', 'padding': '20px', 'marginBottom': '20px'}
@@ -845,7 +860,15 @@ def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
     })
 
 
-def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
+def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: str = 'weight') -> html.Table:
+    if sort_mode == 'rs':
+        rows = sorted(rows, key=lambda r: (r['data']['rs_ratio'] if r.get('data') and r['data'].get('rs_ratio') is not None else -999.0), reverse=True)
+    elif sort_mode == 'rsi':
+        rows = sorted(rows, key=lambda r: (r['data']['rsi'] if r.get('data') else -999.0), reverse=True)
+    elif sort_mode == 'dd':
+        rows = sorted(rows, key=lambda r: (r['data']['drawdown'] if r.get('data') and r['data'].get('drawdown') is not None else 0.0))
+    else:
+        rows = sorted(rows, key=lambda r: ETF_WEIGHTS.get(r['etf'], 0.0), reverse=True)
     _mc_regime = _macro_cache.get('data', {}).get('result', {}).get('regime')
     period_label = 'Wk %' if show_week else 'Day %'
     headers = [
@@ -1512,6 +1535,7 @@ app.layout = html.Div([
     dcc.Store(id='selected-tf',   data='1M'),
     dcc.Store(id='price-period',  data='today'),
     dcc.Store(id='summary-view',  data='table'),
+    dcc.Store(id='sort-mode',     data='weight'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1549,12 +1573,26 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
                 ], style={'display': 'flex', 'justifyContent': 'space-between',
                           'alignItems': 'flex-start', 'marginBottom': '4px'}),
                 html.Div([
-                    html.Button('⊟ Table',   id='btn-view-table',   n_clicks=0,
-                                style=_view_btn_style('table',   'table')),
-                    html.Button('≡ Summary', id='btn-view-summary', n_clicks=0,
-                                style=_view_btn_style('summary', 'table')),
-                ], style={'display': 'flex', 'borderBottom': f'1px solid {BORDER}',
-                          'marginBottom': '12px'}),
+                    html.Div([
+                        html.Button('⊟ Table',   id='btn-view-table',   n_clicks=0,
+                                    style=_view_btn_style('table',   'table')),
+                        html.Button('≡ Summary', id='btn-view-summary', n_clicks=0,
+                                    style=_view_btn_style('summary', 'table')),
+                    ], style={'display': 'flex'}),
+                    html.Div([
+                        html.Span('Sort:', style={'color': MUTED, 'fontSize': '11px',
+                                                  'marginRight': '6px', 'alignSelf': 'center'}),
+                        html.Button('WT%',    id='btn-sort-weight', n_clicks=0,
+                                    style=_sort_btn_style('weight', 'weight')),
+                        html.Button('RS 30d', id='btn-sort-rs',     n_clicks=0,
+                                    style={**_sort_btn_style('rs',  'weight'), 'marginLeft': '4px'}),
+                        html.Button('RSI',    id='btn-sort-rsi',    n_clicks=0,
+                                    style={**_sort_btn_style('rsi', 'weight'), 'marginLeft': '4px'}),
+                        html.Button('52W DD', id='btn-sort-dd',     n_clicks=0,
+                                    style={**_sort_btn_style('dd',  'weight'), 'marginLeft': '4px'}),
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
+                          'borderBottom': f'1px solid {BORDER}', 'marginBottom': '12px'}),
                 dcc.Loading(html.Div(id='signal-table'), color=ACCENT),
             ], {'overflowX': 'auto'}),
         ])
@@ -1663,10 +1701,11 @@ def style_toggle_buttons(period):
      Output('summary-updated', 'children')],
     [Input('main-tabs',    'value'),
      Input('refresh',      'n_intervals'),
-     Input('price-period', 'data')],
+     Input('price-period', 'data'),
+     Input('sort-mode',    'data')],
     [State('summary-view', 'data')],
 )
-def update_signal_summary(tab, _, price_period, current_view):
+def update_signal_summary(tab, _, price_period, sort_mode, current_view):
     if tab != 'signal-summary':
         return dash.no_update, dash.no_update
 
@@ -1688,9 +1727,6 @@ def update_signal_summary(tab, _, price_period, current_view):
             conv_age = action_age = 'unknown'
         rows.append({'etf': etf, 'data': data, 'conv_age': conv_age, 'action_age': action_age})
 
-    # Sort gainers first (by today's daily change regardless of toggle)
-    rows.sort(key=lambda r: r['data']['chg_pct'] if r['data'] else -999.0, reverse=True)
-
     now      = datetime.now().strftime('%H:%M:%S')
     daily_ts = next((r['data']['daily_cached_at'] for r in rows if r['data']), None)
     updated_el = html.Div([
@@ -1706,7 +1742,7 @@ def update_signal_summary(tab, _, price_period, current_view):
     table_style   = {'display': 'none'} if view == 'summary' else {}
     summary_style = {}                  if view == 'summary' else {'display': 'none'}
     content = html.Div([
-        html.Div(build_summary_table(rows, show_week), id='view-table-container',   style=table_style),
+        html.Div(build_summary_table(rows, show_week, sort_mode or 'weight'), id='view-table-container',   style=table_style),
         html.Div(build_summary_view(rows, show_week),  id='view-summary-container', style=summary_style),
     ])
     return content, updated_el
@@ -1721,6 +1757,40 @@ def update_signal_summary(tab, _, price_period, current_view):
 def toggle_summary_view(_, __):
     triggered = dash.callback_context.triggered[0]['prop_id']
     return 'summary' if 'btn-view-summary' in triggered else 'table'
+
+
+@app.callback(
+    Output('sort-mode', 'data'),
+    [Input('btn-sort-weight', 'n_clicks'),
+     Input('btn-sort-rs',     'n_clicks'),
+     Input('btn-sort-rsi',    'n_clicks'),
+     Input('btn-sort-dd',     'n_clicks')],
+    prevent_initial_call=True,
+)
+def update_sort_mode(_, __, ___, ____):
+    triggered = dash.callback_context.triggered[0]['prop_id']
+    if 'weight' in triggered: return 'weight'
+    if '-rs'    in triggered: return 'rs'
+    if 'rsi'    in triggered: return 'rsi'
+    if '-dd'    in triggered: return 'dd'
+    return 'weight'
+
+
+@app.callback(
+    [Output('btn-sort-weight', 'style'),
+     Output('btn-sort-rs',     'style'),
+     Output('btn-sort-rsi',    'style'),
+     Output('btn-sort-dd',     'style')],
+    Input('sort-mode', 'data'),
+)
+def style_sort_buttons(sort_mode):
+    m = sort_mode or 'weight'
+    return (
+        _sort_btn_style('weight', m),
+        {**_sort_btn_style('rs',  m), 'marginLeft': '4px'},
+        {**_sort_btn_style('rsi', m), 'marginLeft': '4px'},
+        {**_sort_btn_style('dd',  m), 'marginLeft': '4px'},
+    )
 
 
 @app.callback(
