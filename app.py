@@ -1769,10 +1769,10 @@ def toggle_summary_view(_, __):
 )
 def update_sort_mode(_, __, ___, ____):
     triggered = dash.callback_context.triggered[0]['prop_id']
-    if 'weight' in triggered: return 'weight'
-    if '-rs'    in triggered: return 'rs'
-    if 'rsi'    in triggered: return 'rsi'
-    if '-dd'    in triggered: return 'dd'
+    if 'btn-sort-rsi'    in triggered: return 'rsi'
+    if 'btn-sort-weight' in triggered: return 'weight'
+    if 'btn-sort-rs'     in triggered: return 'rs'
+    if 'btn-sort-dd'     in triggered: return 'dd'
     return 'weight'
 
 
