@@ -860,15 +860,17 @@ def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
     })
 
 
-def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: str = 'weight') -> html.Table:
+def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: str = 'daypct') -> html.Table:
     if sort_mode == 'rs':
         rows = sorted(rows, key=lambda r: (r['data']['rs_ratio'] if r.get('data') and r['data'].get('rs_ratio') is not None else -999.0), reverse=True)
     elif sort_mode == 'rsi':
         rows = sorted(rows, key=lambda r: (r['data']['rsi'] if r.get('data') else -999.0), reverse=True)
     elif sort_mode == 'dd':
         rows = sorted(rows, key=lambda r: (r['data']['drawdown'] if r.get('data') and r['data'].get('drawdown') is not None else 0.0))
-    else:
+    elif sort_mode == 'weight':
         rows = sorted(rows, key=lambda r: ETF_WEIGHTS.get(r['etf'], 0.0), reverse=True)
+    else:  # daypct
+        rows = sorted(rows, key=lambda r: (r['data']['chg_pct'] if r.get('data') else -999.0), reverse=True)
     _mc_regime = _macro_cache.get('data', {}).get('result', {}).get('regime')
     period_label = 'Wk %' if show_week else 'Day %'
     headers = [
@@ -1535,7 +1537,7 @@ app.layout = html.Div([
     dcc.Store(id='selected-tf',   data='1M'),
     dcc.Store(id='price-period',  data='today'),
     dcc.Store(id='summary-view',  data='table'),
-    dcc.Store(id='sort-mode',     data='weight'),
+    dcc.Store(id='sort-mode',     data='daypct'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1582,14 +1584,16 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
                     html.Div([
                         html.Span('Sort:', style={'color': MUTED, 'fontSize': '11px',
                                                   'marginRight': '6px', 'alignSelf': 'center'}),
+                        html.Button('Day%',   id='btn-sort-daypct', n_clicks=0,
+                                    style=_sort_btn_style('daypct', 'daypct')),
                         html.Button('WT%',    id='btn-sort-weight', n_clicks=0,
-                                    style=_sort_btn_style('weight', 'weight')),
+                                    style={**_sort_btn_style('weight', 'daypct'), 'marginLeft': '4px'}),
                         html.Button('RS 30d', id='btn-sort-rs',     n_clicks=0,
-                                    style={**_sort_btn_style('rs',  'weight'), 'marginLeft': '4px'}),
+                                    style={**_sort_btn_style('rs',  'daypct'), 'marginLeft': '4px'}),
                         html.Button('RSI',    id='btn-sort-rsi',    n_clicks=0,
-                                    style={**_sort_btn_style('rsi', 'weight'), 'marginLeft': '4px'}),
+                                    style={**_sort_btn_style('rsi', 'daypct'), 'marginLeft': '4px'}),
                         html.Button('52W DD', id='btn-sort-dd',     n_clicks=0,
-                                    style={**_sort_btn_style('dd',  'weight'), 'marginLeft': '4px'}),
+                                    style={**_sort_btn_style('dd',  'daypct'), 'marginLeft': '4px'}),
                     ], style={'display': 'flex', 'alignItems': 'center'}),
                 ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
                           'borderBottom': f'1px solid {BORDER}', 'marginBottom': '12px'}),
@@ -1761,35 +1765,39 @@ def toggle_summary_view(_, __):
 
 @app.callback(
     Output('sort-mode', 'data'),
-    [Input('btn-sort-weight', 'n_clicks'),
+    [Input('btn-sort-daypct', 'n_clicks'),
+     Input('btn-sort-weight', 'n_clicks'),
      Input('btn-sort-rs',     'n_clicks'),
      Input('btn-sort-rsi',    'n_clicks'),
      Input('btn-sort-dd',     'n_clicks')],
     prevent_initial_call=True,
 )
-def update_sort_mode(_, __, ___, ____):
+def update_sort_mode(_, __, ___, ____, _____):
     triggered = dash.callback_context.triggered[0]['prop_id']
+    if 'btn-sort-daypct' in triggered: return 'daypct'
     if 'btn-sort-rsi'    in triggered: return 'rsi'
     if 'btn-sort-weight' in triggered: return 'weight'
     if 'btn-sort-rs'     in triggered: return 'rs'
     if 'btn-sort-dd'     in triggered: return 'dd'
-    return 'weight'
+    return 'daypct'
 
 
 @app.callback(
-    [Output('btn-sort-weight', 'style'),
+    [Output('btn-sort-daypct', 'style'),
+     Output('btn-sort-weight', 'style'),
      Output('btn-sort-rs',     'style'),
      Output('btn-sort-rsi',    'style'),
      Output('btn-sort-dd',     'style')],
     Input('sort-mode', 'data'),
 )
 def style_sort_buttons(sort_mode):
-    m = sort_mode or 'weight'
+    m = sort_mode or 'daypct'
     return (
-        _sort_btn_style('weight', m),
-        {**_sort_btn_style('rs',  m), 'marginLeft': '4px'},
-        {**_sort_btn_style('rsi', m), 'marginLeft': '4px'},
-        {**_sort_btn_style('dd',  m), 'marginLeft': '4px'},
+        _sort_btn_style('daypct', m),
+        {**_sort_btn_style('weight', m), 'marginLeft': '4px'},
+        {**_sort_btn_style('rs',     m), 'marginLeft': '4px'},
+        {**_sort_btn_style('rsi',    m), 'marginLeft': '4px'},
+        {**_sort_btn_style('dd',     m), 'marginLeft': '4px'},
     )
 
 
