@@ -2023,6 +2023,71 @@ def update_price_chart(tickers, tf, _, mode):
         ], style={'display': 'flex', 'flexWrap': 'wrap'})
         return fig, legend_el, f'Updated {now}'
 
+    # ── Volume mode ────────────────────────────────────────────────────────────
+    if mode == 'volume':
+        fig          = go.Figure()
+        legend_items = []
+        vol_data     = []
+
+        for ticker in active:
+            if ticker in ('SPX', 'NDQ'):
+                continue
+            color = CHART_DASH.get(ticker, CHART_COLORS.get(ticker, TEXT))
+            df    = _get_daily_df(TICKERS[ticker])
+            if df.empty or 'Volume' not in df.columns:
+                continue
+            vol_s = df['Volume'].dropna().iloc[-bars:]
+            if len(vol_s) < 1:
+                continue
+            vol_data.append((ticker, color, vol_s, df))
+
+        vol_data.sort(key=lambda x: float(x[2].iloc[-1]), reverse=True)
+
+        for ticker, color, vol_s, df in vol_data:
+            fig.add_trace(go.Bar(
+                x=vol_s.index, y=vol_s.values,
+                name=ticker, marker_color=color, opacity=0.8,
+                hovertemplate=f'{ticker}: %{{y:,.0f}}<extra></extra>',
+            ))
+            avg_s = df['Volume'].rolling(20).mean().dropna().iloc[-bars:]
+            if len(avg_s) > 0:
+                fig.add_trace(go.Scatter(
+                    x=avg_s.index, y=avg_s.values,
+                    name=f'{ticker} avg', mode='lines',
+                    line=dict(color=color, width=1.5, dash='dash'),
+                    opacity=0.5, showlegend=False,
+                    hovertemplate=f'{ticker} 20d avg: %{{y:,.0f}}<extra></extra>',
+                ))
+            legend_items.append((ticker, color, float(vol_s.iloc[-1])))
+
+        if not legend_items:
+            fig.update_layout(
+                template='plotly_dark', paper_bgcolor=SURFACE, plot_bgcolor=CARD, height=340,
+                annotations=[dict(text='No data', x=0.5, y=0.5, showarrow=False,
+                                  font=dict(color=MUTED, size=14))],
+            )
+            return fig, '', f'Updated {now}'
+
+        fig.update_layout(
+            template='plotly_dark',
+            paper_bgcolor=SURFACE, plot_bgcolor=CARD,
+            font=dict(family='monospace', color=TEXT, size=11),
+            margin=dict(l=0, r=0, t=10, b=0), height=340,
+            barmode='group', showlegend=False, hovermode='x unified',
+            yaxis=dict(title='Volume', gridcolor=BORDER, zeroline=False),
+            xaxis=dict(gridcolor=BORDER, zeroline=False),
+        )
+
+        legend_el = html.Div([
+            html.Span([
+                html.Span('■ ', style={'color': c}),
+                html.Span(t, style={'color': TEXT, 'marginRight': '4px'}),
+                html.Span(f'{int(v):,}', style={'color': MUTED, 'marginRight': '20px'}),
+            ])
+            for t, c, v in legend_items
+        ], style={'display': 'flex', 'flexWrap': 'wrap'})
+        return fig, legend_el, f'Updated {now}'
+
     # ── Price mode (default) ───────────────────────────────────────────────────
 
     fig          = go.Figure()
