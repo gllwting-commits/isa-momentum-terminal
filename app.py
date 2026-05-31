@@ -88,6 +88,11 @@ CHART_COLORS = {
     'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
     'SPX':  '#94a3b8', 'NDQ':  '#facc15',
 }
+CHART_DASH = {
+    'SEMI': '#6366f1',
+    'NDQ':  '#ef4444',
+    'WTAI': '#111827',
+}
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
 SIG_DESC   = {
@@ -1932,21 +1937,22 @@ def update_price_chart(tickers, tf, _):
         norm       = (series / series.iloc[0]) * 100
         period_ret = (series.iloc[-1] / series.iloc[0] - 1) * 100
 
-        if ticker in ('NDQ', 'SEMI'):
+        trace_color = CHART_DASH.get(ticker, color)
+        if ticker in CHART_DASH:
             fig.add_trace(go.Scatter(
                 x=norm.index, y=norm.values,
-                name=ticker, mode='markers',
-                marker=dict(color=color, size=6),
+                name=ticker, mode='lines',
+                line=dict(dash='dash', color=trace_color, width=2.5),
                 hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
             ))
         else:
             fig.add_trace(go.Scatter(
                 x=norm.index, y=norm.values,
                 name=ticker, mode='lines',
-                line=dict(color=color, width=2),
+                line=dict(color=trace_color, width=2),
                 hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
             ))
-        legend_items.append((ticker, color, period_ret))
+        legend_items.append((ticker, trace_color, period_ret))
 
     if not legend_items:
         fig.update_layout(
