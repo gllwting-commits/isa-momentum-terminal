@@ -986,7 +986,7 @@ def _build_stat_track(
         'position': 'absolute', 'zIndex': '2',
         'left': '0', 'right': '0',
         'top': f'{track_abs_y}px', 'height': '4px',
-        'background': DIM, 'borderRadius': '2px',
+        'background': '#e0e7ff', 'borderRadius': '2px',
     }))
     # Coloured zone segments
     for sp, ep, tz_col in track_zones:
@@ -1016,16 +1016,16 @@ def _build_stat_track(
         kids += [
             html.Span(left_l, style={
                 'position': 'absolute', 'top': f'{ay}px', 'left': '0',
-                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+                'color': '#64748b', 'fontSize': '9px', 'fontFamily': 'monospace',
             }),
             html.Span(center_l, style={
                 'position': 'absolute', 'top': f'{ay}px', 'left': '50%',
                 'transform': 'translateX(-50%)',
-                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+                'color': '#64748b', 'fontSize': '9px', 'fontFamily': 'monospace',
             }),
             html.Span(right_l, style={
                 'position': 'absolute', 'top': f'{ay}px', 'right': '0',
-                'color': DIM, 'fontSize': '9px', 'fontFamily': 'monospace',
+                'color': '#64748b', 'fontSize': '9px', 'fontFamily': 'monospace',
             }),
         ]
 
@@ -1074,7 +1074,7 @@ def _build_stat_track(
         # Label pill (always visible, centred on dot x)
         kids.append(html.Div([
             html.Span(e['etf'], style={
-                'fontWeight': '700', 'color': '#0f1117',
+                'fontWeight': '700', 'color': '#1e293b',
                 'fontSize': '10px', 'marginRight': '3px',
                 'fontFamily': 'monospace',
             }),
@@ -1094,7 +1094,7 @@ def _build_stat_track(
 
     return html.Div([
         html.Div(stat_label, style={
-            'color': MUTED, 'fontSize': '11px', 'fontWeight': '600',
+            'color': '#1e293b', 'fontSize': '11px', 'fontWeight': '600',
             'fontFamily': 'monospace', 'marginBottom': '4px',
             'letterSpacing': '0.5px',
         }),
@@ -2505,10 +2505,10 @@ def update_chart_snapshot(tickers, _):
         ],
         marker_lines=[(30, '#f59e0b', 0.3, 1), (55, '#8b9ab0', 0.25, 1), (70, '#ef4444', 0.5, 2)],
         zone_label_defs=[
-            (0, 12.5, 'oversold <30', '#10b981'),
-            (12.5, 43.75, 'neutral 30–55', '#f59e0b'),
-            (43.75, 62.5, 'momentum 55–70', '#93c5fd'),
-            (62.5, 100, 'overbought >70', '#ef4444'),
+            (0, 12.5, 'oversold <30', '#1e293b'),
+            (12.5, 43.75, 'neutral 30–55', '#1e293b'),
+            (43.75, 62.5, 'momentum 55–70', '#1e293b'),
+            (62.5, 100, 'overbought >70', '#1e293b'),
         ],
         axis_labels=('20', 'danger >70', '100'),
     )
@@ -2516,29 +2516,29 @@ def update_chart_snapshot(tickers, _):
         '52W Drawdown', dd_e, -25, 0,
         track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
         marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ deeper DD', MUTED), (50, 100, 'shallow DD ►', MUTED)],
+        zone_label_defs=[(0, 50, '◄ deeper DD', '#1e293b'), (50, 100, 'shallow DD ►', '#1e293b')],
         axis_labels=('−25%', '', '0%'),
     )
     rs_track = _build_stat_track(
         'RS Trend 30d', rs_e, -10, 10,
         track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
         marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ lagging', MUTED), (50, 100, 'outperforming ►', MUTED)],
+        zone_label_defs=[(0, 50, '◄ lagging', '#1e293b'), (50, 100, 'outperforming ►', '#1e293b')],
         axis_labels=('−10%', '0', '+10%'),
     )
     day_track = _build_stat_track(
         'Day %', day_e, -3, 3,
         track_zones=[(0, 50, '#fecaca'), (50, 100, '#bbf7d0')],
         marker_lines=[(0, '#8b9ab0', 0.2, 2)],
-        zone_label_defs=[(0, 50, '◄ down', MUTED), (50, 100, 'up ►', MUTED)],
+        zone_label_defs=[(0, 50, '◄ down', '#1e293b'), (50, 100, 'up ►', '#1e293b')],
         axis_labels=('−3%', '0', '+3%'),
     )
 
     stats_section = card([
-        html.P('Snapshot', style={'color': MUTED, 'fontSize': '11px', 'fontWeight': '600',
+        html.P('Snapshot', style={'color': '#1e293b', 'fontSize': '11px', 'fontWeight': '600',
                                    'letterSpacing': '0.5px', 'margin': '0 0 16px 0'}),
         rsi_track, dd_track, rs_track, day_track,
-    ])
+    ], {'background': '#f0f4ff', 'border': '1px solid #c7d2fe'})
     cards_section = card(html.Div(cards, style={
         'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px',
     }))
