@@ -590,6 +590,51 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
 
 
 _macro_cache: dict = {}
+_tnx_1y_cache: dict = {}
+
+
+def _get_tnx_1y() -> 'pd.Series | None':
+    """^TNX 1Y daily closes for beta regression. Cached 24h."""
+    now    = datetime.now()
+    cached = _tnx_1y_cache.get('data')
+    if cached and (now - cached['ts']).total_seconds() < 86400:
+        return cached['series']
+    try:
+        df = yf.download('^TNX', period='1y', interval='1d', progress=False, auto_adjust=True)
+        if df.empty or 'Close' not in df.columns:
+            return None
+        s       = df['Close'].dropna()
+        s.index = pd.to_datetime(s.index).normalize()
+        _tnx_1y_cache['data'] = {'ts': now, 'series': s}
+        return s
+    except Exception:
+        return None
+
+
+def fetch_rate_beta(etf: str) -> 'float | None':
+    """1Y daily beta of ETF returns vs ^TNX moves. None if < 20 aligned rows."""
+    tnx_s = _get_tnx_1y()
+    if tnx_s is None:
+        return None
+    df = _get_daily_df(etf)
+    if df is None or df.empty:
+        return None
+    etf_s       = df['Close'].dropna()
+    etf_s.index = pd.to_datetime(etf_s.index).normalize()
+    merged = pd.merge(
+        tnx_s.rename('tnx'), etf_s.rename('etf'),
+        left_index=True, right_index=True, how='inner',
+    )
+    if len(merged) < 20:
+        return None
+    aligned = pd.concat([
+        merged['tnx'].pct_change(),
+        merged['etf'].pct_change(),
+    ], axis=1).dropna()
+    if len(aligned) < 20:
+        return None
+    slope = np.polyfit(aligned['tnx'].values, aligned['etf'].values, 1)[0]
+    return round(float(slope), 2)
 
 
 def fetch_macro_regime() -> dict:
@@ -1461,6 +1506,9 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                                          else YELLOW if data['rs_flips'] <= 3 else RED),
                                'fontSize': '10px', 'marginTop': '2px'},
                     ),
+                    *([html.Div(f'β {data["rate_beta"]:+.2f}',
+                                style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'})]
+                      if data.get('rate_beta') is not None else []),
                 ], style=TD_STYLE)
             else:
                 rs_cell = html.Td('-', style={**TD_STYLE, 'color': MUTED, 'fontSize': '12px'})
@@ -2109,6 +2157,7 @@ def update_signal_summary(tab, _, price_period, sort_mode, current_view):
             data['rs_ratio']   = fetch_rs_ratio(etf)
             data['rs_persist'] = fetch_rs_persist(etf)
             data['rs_flips']   = fetch_rs_flips(etf)
+            data['rate_beta']  = fetch_rate_beta(etf)
             action_text = get_action_text(data['rec'], data['conviction'])
             conv_age, action_age = _update_signal_history(etf, data['conviction'], action_text)
         else:
