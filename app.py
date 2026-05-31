@@ -84,9 +84,9 @@ ORANGE   = '#f97316'
 DIM      = SLATE_THEME['dim']
 
 CHART_COLORS = {
-    'SGLS': '#f59e0b', 'VDPG': '#3b82f6', 'WTAI': '#10b981', 'FLXK': '#f43f5e',
-    'SEMG': '#a78bfa', 'SEMI': '#06b6d4', 'JEDG': '#fb923c',
-    'SPX':  '#84cc16', 'NDQ':  '#e879f9',
+    'JEDG': '#f43f5e', 'SEMG': '#22d3ee', 'SEMI': '#3b82f6', 'VDPG': '#84cc16',
+    'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#a78bfa',
+    'SPX':  '#94a3b8', 'NDQ':  '#fb923c',
 }
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
