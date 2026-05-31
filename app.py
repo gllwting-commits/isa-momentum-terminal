@@ -831,6 +831,20 @@ TD_STYLE = {
 
 
 # ── Signal Summary table ──────────────────────────────────────────────────────
+def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
+    vals = closes.dropna().tolist()
+    if len(vals) < 2:
+        return html.Div()
+    mn, mx = min(vals), max(vals)
+    rng = mx - mn if mx != mn else 1.0
+    bars = '▁▂▃▄▅▆▇█'
+    spark = ''.join(bars[min(7, int((v - mn) / rng * 7.99))] for v in vals)
+    return html.Div(spark, style={
+        'color': color, 'fontSize': '8px', 'letterSpacing': '1px',
+        'marginTop': '4px', 'lineHeight': '1',
+    })
+
+
 def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table:
     _mc_regime = _macro_cache.get('data', {}).get('result', {}).get('regime')
     period_label = 'Wk %' if show_week else 'Day %'
@@ -869,7 +883,15 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             chg_pct    = data['week_chg_pct'] if show_week else data['chg_pct']
             day_color  = GREEN if chg_pct > 0 else (RED if chg_pct < 0 else MUTED)
             day_arrow  = '+' if chg_pct > 0 else ('-' if chg_pct < 0 else ' ')
-            row_bg     = get_row_tint(rec, conv)
+            if rec == 'SELL' and conv == 'HIGH':
+                row_bg     = RED + '09'
+                row_border = f'3px solid {RED}'
+            elif rec == 'SELL' and conv == 'MED':
+                row_bg     = AMBER + '07'
+                row_border = f'3px solid {AMBER}'
+            else:
+                row_bg     = 'transparent'
+                row_border = '3px solid transparent'
             conv_color = CONVICTION_COLOR[conv]
             rec_color  = REC_COLOR[rec]
 
@@ -883,6 +905,9 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                     'vol: AIAG.L',
                     style={'color': MUTED, 'fontSize': '10px', 'fontStyle': 'italic', 'marginTop': '2px'},
                 ))
+            spark_series = _get_daily_df(TICKERS[etf])['Close'].dropna().iloc[-15:]
+            spark_color  = GREEN if chg_pct >= 0 else RED
+            etf_name_children.append(_make_sparkline(spark_series, spark_color))
             etf_cell = html.Td(etf_name_children, style=TD_STYLE)
 
             # Volume cell
@@ -973,21 +998,34 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
             ], style=TD_STYLE)
 
             # RSI 14 cell
-            rsi_val    = data['rsi']
-            rsi_color  = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
-            rsi_chg    = data.get('rsi_change')
-            rsi_chg_el = []
+            rsi_val       = data['rsi']
+            rsi_color     = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
+            rsi_bar_color = (RED if rsi_val > 70 else GREEN if rsi_val < 30 else
+                             AMBER if rsi_val > 55 else MUTED)
+            rsi_chg       = data.get('rsi_change')
+            rsi_delta_el  = []
             if rsi_chg is not None:
-                chg_sign  = '+' if rsi_chg >= 0 else ''
-                chg_color = GREEN if rsi_chg > 1.5 else (RED if rsi_chg < -1.5 else YELLOW)
-                rsi_chg_el = [html.Span(
-                    f'  {chg_sign}{rsi_chg:.1f}',
+                chg_sign     = '+' if rsi_chg >= 0 else ''
+                chg_color    = GREEN if rsi_chg > 1.5 else (RED if rsi_chg < -1.5 else YELLOW)
+                rsi_delta_el = [html.Span(
+                    f' {chg_sign}{rsi_chg:.1f}',
                     style={'color': chg_color, 'fontSize': '10px'},
                 )]
-            rsi_cell = html.Td(
-                [html.Span(f'{rsi_val:.1f}', style={'color': rsi_color, 'fontWeight': '600'})] + rsi_chg_el,
-                style=TD_STYLE,
+            rsi_bar  = html.Div(
+                html.Div(style={
+                    'width': f'{rsi_val / 100 * 42:.0f}px', 'height': '3px',
+                    'background': rsi_bar_color, 'borderRadius': '2px',
+                }),
+                style={'width': '42px', 'height': '3px', 'background': DIM,
+                       'borderRadius': '2px', 'marginBottom': '5px'},
             )
+            rsi_cell = html.Td([
+                rsi_bar,
+                html.Div(
+                    [html.Span(f'{rsi_val:.1f}', style={'color': rsi_color, 'fontWeight': '600'})]
+                    + rsi_delta_el,
+                ),
+            ], style=TD_STYLE)
 
             # SMA POSITION cell
             vs20_color = GREEN if data['vs20'] == 'Above' else RED
@@ -1066,7 +1104,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False) -> html.Table
                 rs_cell,
             ], style={
                 'background': row_bg,
-                'borderLeft': '4px solid ' + conv_color,
+                'borderLeft': row_border,
                 'transition': 'background 0.15s',
                 'borderBottom': '1px solid ' + BORDER,
             })
