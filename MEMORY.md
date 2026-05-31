@@ -380,12 +380,33 @@ VERIFIED beta values (2026-05-31):
 NOT TOUCHED: fetch_macro_regime(), _macro_cache, fetch_daily() return signature,
   fetch_intraday(), _get_daily_df(), all GBp/benchmark/RS logic.
 
+### 2026-06-01 — v1.17.0 Feature C Radar tab
+BUILT: Radar tab — momentum entry scanner for 10 watchlist ETFs.
+  Watchlist: AIAI, ISPY, INRG, NUKZ, NATO, ROBO, RBTX, EMQQ, NDIA, HEAL.
+  All WATCHLIST_TICKERS are .L suffix LSE tickers.
+  GBp tickers (ISPY.L, INRG.L, RBTX.L): ÷100 handled automatically
+    by _get_daily_df() via fast_info.currency check — no manual guard needed.
+  Signal: all three conditions must pass:
+    1. RSI crossed above 60 in last 5 days (rsi_now > 60 AND min(rsi[-6:-1]) < 60)
+    2. RS vs SWDA.L > +1.5% over 30 days
+    3. 52W DD better than -15%
+  RS benchmark: SWDA.L for all radar tickers. FX cancels in ratio pct_change.
+  Fetch: fetch_radar_ticker() uses _get_daily_df() — daily cache, no new fetch interval.
+  Display: build_radar_table() — 6 columns, green left border + ✓ ENTRY on signal rows.
+  Tab: added to existing render_tab() router as if tab == 'radar' branch.
+  VERIFIED: ROBO is only signal candidate as of 2026-06-01.
+  Commit: b0de598.
+NEW CONSTANTS: WATCHLIST, WATCHLIST_TICKERS, WATCHLIST_NAMES (lines 29–40).
+NOT TOUCHED: ETFS, TICKERS, RS_BENCHMARKS, fetch_daily(), fetch_intraday(),
+  all main table columns, all existing callbacks.
+
 ## CURRENT STATE
-Version: v1.16.0
+Version: v1.17.0
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT, RSI 14,
   SMA POSITION (+ % from SMA50 third line), 52W DRAWDOWN,
   RS TREND 30d (+ persist Nd + flip count + β rate sensitivity).
+Tabs: Signal Summary · Charts · ISA & Retirement · Radar.
 Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y (level
   + 10d delta), VIX, DXY, SOX. SOX display only — not scored.
   Fetch failure shows N/A in grey.
@@ -395,6 +416,7 @@ Charts tab: Price / RSI 14 / Volume modes. Timeframes 1W–1Y.
   Snapshot stat lanes below chart. Timeframe toggle 1D–1Y.
 Theme switcher: outer chrome only (bg/header/tabs/macro strip).
   Card interiors stay Slate until full propagation is built.
+Radar tab: 10 watchlist ETFs, RSI crossover + RS vs SWDA + 52W DD signal logic.
 
 ## REMAINING BUILD ITEMS
 1. SOX verify — cross-check SOX value against TradingView at Monday
