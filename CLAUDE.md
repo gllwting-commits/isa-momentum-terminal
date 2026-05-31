@@ -91,6 +91,50 @@ IWMO and SGLS show — (dash) for volume. This is intentional.
 Use df['Close'].iloc[-2] — NOT fast_info.previous_close
 fast_info.previous_close is unreliable across bank holidays.
 
+### CHARTS TAB
+Three chart modes: Price (normalised), RSI 14, Volume.
+Ticker colour palette (fixed — do not reassign):
+  JEDG  #ef4444  solid     SEMG  #22d3ee  solid
+  SEMI  #6366f1  dashed    VDPG  #84cc16  solid
+  WTAI  #facc15  dashed    SGLS  #f59e0b  solid
+  FLXK  #e879f9  solid     SPX   #94a3b8  solid
+  NDQ   #f97316  dashed
+Benchmarks: SPX (^GSPC), NDQ (^IXIC) via fetch_benchmark_price().
+Timeframe bar counts (all sliced from daily cache):
+  1W=5, 1M=21, 3M=63, 6M=126, 1Y=252
+All data served from _get_daily_df daily cache — no new fetches.
+
+### SNAPSHOT STATS
+4 stat rows per ETF: RSI 14 · 52W DD / Period Return ·
+  RS Trend / RS vs Benchmark · Day%
+Timeframe toggle: 1D / 1W / 1M / 3M / 6M / 1Y
+  Independent of the main chart timeframe toggle.
+1D mode:     RSI + 52W DD + RS 30d + Day%
+Non-1D mode: RSI + Period Return % + RS vs Benchmark
+             (Day% hidden on non-1D)
+Background colour: #f0f4ff — do not change.
+Implementation: pure html.Div components — no Plotly figures.
+State stored in: dcc.Store(id='snapshot-tf', data='1d')
+
+### THEME SYSTEM
+7 themes in THEMES dict (top of app.py):
+  Slate (default), Dusk, Carbon, Midnight,
+  Terminal, Alpine, Parchment
+Selection widget: dcc.Dropdown(id='theme-dropdown') in header.
+apply_theme callback outputs style to these IDs only:
+  app-root, header-bar, tabs-bar, macro-regime-strip
+Card interiors stay Slate — full propagation deferred.
+Do not thread theme into builder functions without asking first.
+
+### SIGNAL TABLE
+Sort options: Day% (default), WT%, RS 30d, RSI, 52W DD.
+Row left border: action-based only.
+  Exit / reduce = 3px solid RED
+  Trim          = 3px solid AMBER
+  All others    = transparent (no border)
+  (Replaces old conviction-based border — do not revert.)
+Sparkline: 15-day SVG, 70×22 px, rendered inline in ETF cell.
+
 ## BEFORE ADDING ANY NEW LSE TICKER
 1. Verify currency denomination in yfinance
 2. Check if it reports GBp or GBP
