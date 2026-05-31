@@ -85,13 +85,13 @@ DIM      = SLATE_THEME['dim']
 
 CHART_COLORS = {
     'JEDG': '#ef4444', 'SEMG': '#22d3ee', 'SEMI': '#6366f1', 'VDPG': '#84cc16',
-    'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
-    'SPX':  '#94a3b8', 'NDQ':  '#facc15',
+    'WTAI': '#facc15', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
+    'SPX':  '#94a3b8', 'NDQ':  '#f97316',
 }
 CHART_DASH = {
     'SEMI': '#6366f1',
-    'NDQ':  '#ef4444',
-    'WTAI': '#111827',
+    'NDQ':  '#f97316',
+    'WTAI': '#facc15',
 }
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
