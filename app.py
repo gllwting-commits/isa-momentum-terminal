@@ -86,7 +86,7 @@ DIM      = SLATE_THEME['dim']
 CHART_COLORS = {
     'JEDG': '#ef4444', 'SEMG': '#22d3ee', 'SEMI': '#6366f1', 'VDPG': '#84cc16',
     'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
-    'SPX':  '#94a3b8', 'NDQ':  '#fb923c',
+    'SPX':  '#94a3b8', 'NDQ':  '#facc15',
 }
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
@@ -1916,7 +1916,11 @@ def update_price_chart(tickers, tf, _):
             series = fetch_benchmark_price('^IXIC')
         else:
             df = _get_daily_df(TICKERS[ticker])
-            series = df['Close'].dropna() if not df.empty else None
+            if df.empty:
+                series = fetch_benchmark_price(TICKERS[ticker])
+            else:
+                close_s = df['Close'].dropna()
+                series  = close_s if not close_s.empty else None
 
         if series is None or len(series) < 2:
             continue
@@ -1928,12 +1932,20 @@ def update_price_chart(tickers, tf, _):
         norm       = (series / series.iloc[0]) * 100
         period_ret = (series.iloc[-1] / series.iloc[0] - 1) * 100
 
-        fig.add_trace(go.Scatter(
-            x=norm.index, y=norm.values,
-            name=ticker,
-            line=dict(color=color, width=2),
-            hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
-        ))
+        if ticker in ('NDQ', 'SEMI'):
+            fig.add_trace(go.Scatter(
+                x=norm.index, y=norm.values,
+                name=ticker, mode='markers',
+                marker=dict(color=color, size=6),
+                hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=norm.index, y=norm.values,
+                name=ticker, mode='lines',
+                line=dict(color=color, width=2),
+                hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
+            ))
         legend_items.append((ticker, color, period_ret))
 
     if not legend_items:
