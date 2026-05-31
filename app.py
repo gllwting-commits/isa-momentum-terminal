@@ -2531,7 +2531,7 @@ def update_chart_snapshot(tickers, snap_tf, _):
             if snap_tf == '1d':
                 rsi_val = float(rsi_s.iloc[-1]) if len(rsi_s) >= 1 else None
             else:
-                rsi_val = float(rsi_s.iloc[-bars]) if len(rsi_s) >= bars else None
+                rsi_val = float(rsi_s.iloc[-1]) if len(rsi_s) >= 1 else None
         if rsi_val is None:
             rsi_e.append({'etf': etf, 'val': 50, 'tcol': MUTED, 'vcol': MUTED, 'dstr': 'N/A'})
         else:
@@ -2614,9 +2614,11 @@ def update_chart_snapshot(tickers, snap_tf, _):
             rs_period = None
             if etf in RS_BENCHMARKS and period_ret is not None:
                 bench_s = fetch_benchmark_price(RS_BENCHMARKS[etf][0])
-                if bench_s is not None and len(bench_s) >= bars:
-                    bench_ret = (bench_s.iloc[-1] / bench_s.iloc[-bars] - 1) * 100
-                    rs_period = period_ret - bench_ret
+                if bench_s is not None and len(bench_s) >= 2:
+                    slice_bars = min(bars, len(bench_s), len(close))
+                    etf_ret    = (close.iloc[-1] / close.iloc[-slice_bars] - 1) * 100
+                    bench_ret  = (bench_s.iloc[-1] / bench_s.iloc[-slice_bars] - 1) * 100
+                    rs_period  = etf_ret - bench_ret
             rsp_vc = GREEN if (rs_period or 0) > 0 else RED
             rsp_e.append({
                 'etf': etf,
