@@ -1970,6 +1970,7 @@ def update_price_chart(tickers, tf, _, mode):
         fig          = go.Figure()
         legend_items = []
 
+        rsi_data = []
         for ticker in active:
             if ticker in ('SPX', 'NDQ'):
                 continue
@@ -1980,12 +1981,14 @@ def update_price_chart(tickers, tf, _, mode):
             rsi_s = df['RSI'].dropna().iloc[-bars:]
             if len(rsi_s) < 2:
                 continue
-            current_rsi = float(rsi_s.iloc[-1])
-            is_dashed   = ticker in CHART_DASH
+            rsi_data.append((ticker, color, rsi_s, float(rsi_s.iloc[-1])))
+        rsi_data.sort(key=lambda x: x[3], reverse=True)
+        for ticker, color, rsi_s, current_rsi in rsi_data:
             fig.add_trace(go.Scatter(
                 x=rsi_s.index, y=rsi_s.values,
                 name=ticker, mode='lines',
-                line=dict(color=color, width=2, dash='dash' if is_dashed else 'solid'),
+                line=dict(color=color, width=2,
+                          dash='dash' if ticker in CHART_DASH else 'solid'),
                 hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
             ))
             legend_items.append((ticker, color, current_rsi))
@@ -2024,6 +2027,7 @@ def update_price_chart(tickers, tf, _, mode):
     fig          = go.Figure()
     legend_items = []
 
+    price_data = []
     for ticker in active:
         color = CHART_COLORS.get(ticker, TEXT)
         if ticker == 'SPX':
@@ -2040,15 +2044,17 @@ def update_price_chart(tickers, tf, _, mode):
 
         if series is None or len(series) < 2:
             continue
-
         series = series.iloc[-bars:]
         if len(series) < 2:
             continue
-
-        norm       = (series / series.iloc[0]) * 100
-        period_ret = (series.iloc[-1] / series.iloc[0] - 1) * 100
-
+        norm        = (series / series.iloc[0]) * 100
+        period_ret  = (series.iloc[-1] / series.iloc[0] - 1) * 100
         trace_color = CHART_DASH.get(ticker, color)
+        price_data.append((ticker, norm, period_ret, trace_color))
+
+    price_data.sort(key=lambda x: float(x[1].iloc[-1]), reverse=True)
+
+    for ticker, norm, period_ret, trace_color in price_data:
         if ticker in CHART_DASH:
             fig.add_trace(go.Scatter(
                 x=norm.index, y=norm.values,
