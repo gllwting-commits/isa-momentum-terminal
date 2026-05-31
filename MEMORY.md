@@ -347,11 +347,45 @@ DEFERRED: Full propagation (card interiors, charts, signal table).
 VERIFIED: outer chrome visibly changes on theme selection.
   Theme persists when switching tabs (dropdown value held in DOM).
 
+### 2026-05-31 — v1.15.0 % from SMA50
+BUILT: Third line in SMA POSITION cell — % from SMA50.
+  Formula: pct50 = (close - sma50) / sma50 * 100 (pre-computed in rows builder).
+  Display: "+12.3% from SMA50" — green ≥+5%, amber +2–5%, grey 0–+2%, red <0%.
+  Guard: sma_ext_pct = data.get('pct50') — None check skips line if missing.
+  Variable prefix: sma_ext_. Modified: build_summary_table() only.
+  Commit: 424491d.
+NOT TOUCHED: fetch_daily, fetch_intraday, pct50 computation in rows builder,
+  all other columns, GBp conversion, RS logic.
+
+### 2026-05-31 — v1.15.0 rate sensitivity beta
+BUILT: fetch_rate_beta(etf) — 1Y daily beta of ETF returns vs ^TNX moves.
+  New cache: _tnx_1y_cache (24h TTL). New fetch: _get_tnx_1y() fetches
+  ^TNX period='1y' interval='1d', separate from _macro_cache (3mo, 60min TTL).
+  Alignment: pd.merge inner join on normalized date index.
+  Guard: < 20 aligned rows → returns None (no crash, no display).
+  Computation: np.polyfit(tnx_returns, etf_returns, 1)[0], rounded 2dp.
+  Display: "β -0.42" MUTED grey, appended as fifth line in RS TREND 30d cell.
+  Variable prefix: rate_beta_. Commit: 10d1f64.
+VERIFICATION NOTE: SEMG is long-duration growth — expect NEGATIVE beta.
+  Positive beta on SEMG = investigate date alignment first.
+FIXED (same session): two bugs in fetch_rate_beta(). Commit: 711a739.
+  1. KeyError 'Close': yfinance returns multi-level column DataFrame.
+     Fix: .squeeze() on both tnx_raw and df['Close'] before .rename().
+  2. Exception propagating up and killing entire callback.
+     Fix: entire function body wrapped in try/except Exception: return None.
+VERIFIED beta values (2026-05-31):
+  Working:  SEMG β -0.12 · SEMI β -0.18 · WTAI β -0.23 · SGLS β +0.00
+  Absent:   VDPG, FLXK, JEDG — yfinance returns insufficient 1Y data.
+  Not a code issue. pd.merge inner join is correct. Do not debug further.
+NOT TOUCHED: fetch_macro_regime(), _macro_cache, fetch_daily() return signature,
+  fetch_intraday(), _get_daily_df(), all GBp/benchmark/RS logic.
+
 ## CURRENT STATE
-Version: v1.14.0
+Version: v1.16.0
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT, RSI 14,
-  SMA POSITION, 52W DRAWDOWN, RS TREND 30d (+ persist Nd + flip count).
+  SMA POSITION (+ % from SMA50 third line), 52W DRAWDOWN,
+  RS TREND 30d (+ persist Nd + flip count + β rate sensitivity).
 Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y (level
   + 10d delta), VIX, DXY, SOX. SOX display only — not scored.
   Fetch failure shows N/A in grey.
