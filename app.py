@@ -613,28 +613,33 @@ def _get_tnx_1y() -> 'pd.Series | None':
 
 def fetch_rate_beta(etf: str) -> 'float | None':
     """1Y daily beta of ETF returns vs ^TNX moves. None if < 20 aligned rows."""
-    tnx_s = _get_tnx_1y()
-    if tnx_s is None:
+    try:
+        tnx_raw = _get_tnx_1y()
+        if tnx_raw is None or (hasattr(tnx_raw, 'empty') and tnx_raw.empty):
+            return None
+        df = _get_daily_df(etf)
+        if df is None or df.empty:
+            return None
+        tnx_s       = tnx_raw.squeeze().dropna()
+        etf_s       = df['Close'].squeeze().dropna()
+        tnx_s.index = pd.to_datetime(tnx_s.index).normalize()
+        etf_s.index = pd.to_datetime(etf_s.index).normalize()
+        merged = pd.merge(
+            tnx_s.rename('tnx'), etf_s.rename('etf'),
+            left_index=True, right_index=True, how='inner',
+        )
+        if len(merged) < 20:
+            return None
+        aligned = pd.concat([
+            merged['tnx'].pct_change(),
+            merged['etf'].pct_change(),
+        ], axis=1).dropna()
+        if len(aligned) < 20:
+            return None
+        slope = np.polyfit(aligned['tnx'].values, aligned['etf'].values, 1)[0]
+        return round(float(slope), 2)
+    except Exception:
         return None
-    df = _get_daily_df(etf)
-    if df is None or df.empty:
-        return None
-    etf_s       = df['Close'].dropna()
-    etf_s.index = pd.to_datetime(etf_s.index).normalize()
-    merged = pd.merge(
-        tnx_s.rename('tnx'), etf_s.rename('etf'),
-        left_index=True, right_index=True, how='inner',
-    )
-    if len(merged) < 20:
-        return None
-    aligned = pd.concat([
-        merged['tnx'].pct_change(),
-        merged['etf'].pct_change(),
-    ], axis=1).dropna()
-    if len(aligned) < 20:
-        return None
-    slope = np.polyfit(aligned['tnx'].values, aligned['etf'].values, 1)[0]
-    return round(float(slope), 2)
 
 
 def fetch_macro_regime() -> dict:
