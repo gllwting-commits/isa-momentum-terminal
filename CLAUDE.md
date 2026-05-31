@@ -135,6 +135,46 @@ Row left border: action-based only.
   (Replaces old conviction-based border — do not revert.)
 Sparkline: 15-day SVG, 70×22 px, rendered inline in ETF cell.
 
+### RADAR TAB
+Watchlist constants at top of app.py (near ETF_NAMES):
+  WATCHLIST         — ordered list of short names
+  WATCHLIST_TICKERS — short name → full ticker string
+  WATCHLIST_NAMES   — short name → display name
+
+Watchlist tickers (all verified live in yfinance):
+  AIAI.L  USD    ISPY.L  GBp (÷100 via _get_daily_df)
+  INRG.L  GBp    NUKZ.L  USD
+  NATO.L  USD    ROBO.L  USD
+  RBTX.L  GBp    EMQQ.L  USD
+  NDIA.L  USD    HEAL.L  USD
+
+GBp conversion for ISPY.L, INRG.L, RBTX.L handled
+  automatically by _get_daily_df() currency check.
+  Do NOT add these to the manual pence list — conversion
+  is already applied at fetch.
+
+RS benchmark for all radar tickers: SWDA.L
+  SWDA.L is GBp — already in pence list.
+
+Signal criteria (ALL THREE must be true):
+  1. RSI crossed above 60 in last 5 days
+     rsi_s.iloc[-1] > 60 and min(rsi_s.iloc[-6:-1]) < 60
+  2. RS vs SWDA.L 30d > +1.5%
+  3. 52W drawdown > -15%
+
+fetch_radar_ticker(ticker_str) — new function
+  Reads _get_daily_df() cache — no new fetch if cached.
+  Wrapped in try/except — returns None on any failure.
+  Do NOT call fetch_daily() for radar tickers.
+  Do NOT add radar tickers to main ETFS list.
+
+build_radar_table(rows) — new function
+  Simple html.Table. Placed before render_tab().
+
+Radar tab fires via existing render_tab() router.
+  No new callback, no new dcc.Interval, no new dcc.Store.
+  Repeat tab visits within same day = cache hits, no refetch.
+
 ## BEFORE ADDING ANY NEW LSE TICKER
 1. Verify currency denomination in yfinance
 2. Check if it reports GBp or GBP
