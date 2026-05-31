@@ -814,7 +814,13 @@ def _view_btn_style(this_val: str, current_val: str) -> dict:
     }
 
 
-def _chart_ticker_btn_style(ticker: str, active: bool) -> dict:
+def _chart_ticker_btn_style(ticker: str, active: bool, greyed: bool = False) -> dict:
+    if greyed:
+        return {
+            'background': 'transparent', 'color': DIM, 'border': f'1px solid {DIM}',
+            'borderRadius': '20px', 'padding': '4px 12px', 'cursor': 'not-allowed',
+            'fontFamily': 'monospace', 'fontSize': '12px', 'fontWeight': '700', 'opacity': '0.4',
+        }
     color = CHART_COLORS.get(ticker, TEXT)
     return {
         'background': color if active else 'transparent',
@@ -822,6 +828,17 @@ def _chart_ticker_btn_style(ticker: str, active: bool) -> dict:
         'border': f'1px solid {color}',
         'borderRadius': '20px', 'padding': '4px 12px', 'cursor': 'pointer',
         'fontFamily': 'monospace', 'fontSize': '12px', 'fontWeight': '700',
+    }
+
+
+def _chart_mode_btn_style(this_mode: str, current_mode: str) -> dict:
+    active = this_mode == current_mode
+    return {
+        'background': ACCENT if active else 'transparent',
+        'color': '#000' if active else MUTED,
+        'border': f'1px solid {ACCENT if active else BORDER}',
+        'borderRadius': '4px', 'padding': '4px 12px', 'cursor': 'pointer',
+        'fontFamily': 'monospace', 'fontSize': '12px', 'fontWeight': '600',
     }
 
 
@@ -1586,6 +1603,7 @@ app.layout = html.Div([
     dcc.Store(id='summary-view',  data='table'),
     dcc.Store(id='sort-mode',     data='daypct'),
     dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI', 'JEDG']),
+    dcc.Store(id='chart-mode',    data='price'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1596,9 +1614,10 @@ app.layout = html.Div([
     Output('tab-content', 'children'),
     Input('main-tabs', 'value'),
     [State('selected-etf', 'data'), State('selected-tf', 'data'),
-     State('price-period', 'data'), State('chart-tickers', 'data')],
+     State('price-period', 'data'), State('chart-tickers', 'data'),
+     State('chart-mode',    'data')],
 )
-def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers):
+def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode):
     if tab == 'signal-summary':
         period = price_period or 'today'
         return html.Div([
@@ -1651,16 +1670,28 @@ def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers):
         ])
 
     if tab == 'charts':
-        active_tickers = set(chart_tickers or ['SEMG', 'WTAI', 'JEDG'])
+        active_tickers  = set(chart_tickers or ['SEMG', 'WTAI', 'JEDG'])
+        mode            = chart_mode or 'price'
+        rsi_mode        = mode == 'rsi'
         return html.Div([
             card(html.Div(
                 [html.Button(t, id={'type': 'chart-ticker-btn', 'index': t}, n_clicks=0,
-                             style=_chart_ticker_btn_style(t, t in active_tickers))
+                             style=_chart_ticker_btn_style(
+                                 t, t in active_tickers,
+                                 greyed=(rsi_mode and t in ('SPX', 'NDQ'))))
                  for t in CHART_TICKERS_ALL],
                 style={'display': 'flex', 'gap': '8px', 'flexWrap': 'wrap'},
             ), {'padding': '14px 16px'}),
 
             card([
+                html.Div([
+                    html.Button('Price',  id={'type': 'chart-mode-btn', 'index': 'price'},  n_clicks=0,
+                                style=_chart_mode_btn_style('price', mode)),
+                    html.Button('RSI 14', id={'type': 'chart-mode-btn', 'index': 'rsi'},    n_clicks=0,
+                                style={**_chart_mode_btn_style('rsi', mode),    'marginLeft': '4px'}),
+                    html.Button('Volume', id={'type': 'chart-mode-btn', 'index': 'volume'}, n_clicks=0,
+                                style={**_chart_mode_btn_style('volume', mode), 'marginLeft': '4px'}),
+                ], style={'display': 'flex', 'marginBottom': '10px'}),
                 html.Div(
                     [html.Button(tf, id={'type': 'tf-btn', 'index': tf}, n_clicks=0,
                                  style=tf_btn_style(tf, sel_tf or '1M'))
@@ -1892,7 +1923,29 @@ def style_tf_buttons(selected):
     return [tf_btn_style(t, selected) for t in TIMEFRAMES]
 
 
-# ── Price chart callback (T4) ─────────────────────────────────────────────────
+# ── Chart mode callbacks (T5) ────────────────────────────────────────────────
+@app.callback(
+    Output('chart-mode', 'data'),
+    [Input({'type': 'chart-mode-btn', 'index': m}, 'n_clicks') for m in ('price', 'rsi', 'volume')],
+    prevent_initial_call=True,
+)
+def update_chart_mode(*_):
+    triggered = dash.callback_context.triggered[0]['prop_id']
+    return json.loads(triggered.split('.')[0])['index']
+
+
+@app.callback(
+    [Output({'type': 'chart-mode-btn', 'index': m}, 'style') for m in ('price', 'rsi', 'volume')],
+    Input('chart-mode', 'data'),
+)
+def style_chart_mode_buttons(mode):
+    m = mode or 'price'
+    return [_chart_mode_btn_style('price', m),
+            {**_chart_mode_btn_style('rsi',    m), 'marginLeft': '4px'},
+            {**_chart_mode_btn_style('volume', m), 'marginLeft': '4px'}]
+
+
+# ── Price chart callback (T4/T5) ──────────────────────────────────────────────
 @app.callback(
     [
         Output('price-chart',        'figure'),
@@ -1903,12 +1956,70 @@ def style_tf_buttons(selected):
         Input('chart-tickers', 'data'),
         Input('selected-tf',   'data'),
         Input('refresh',       'n_intervals'),
+        Input('chart-mode',    'data'),
     ],
 )
-def update_price_chart(tickers, tf, _):
+def update_price_chart(tickers, tf, _, mode):
     bars    = TF_BARS.get(tf or '1M', 21)
     now     = datetime.now().strftime('%H:%M:%S')
     active  = list(tickers or ['SEMG', 'WTAI', 'JEDG'])
+    mode    = mode or 'price'
+
+    # ── RSI mode ──────────────────────────────────────────────────────────────
+    if mode == 'rsi':
+        fig          = go.Figure()
+        legend_items = []
+
+        for ticker in active:
+            if ticker in ('SPX', 'NDQ'):
+                continue
+            color = CHART_DASH.get(ticker, CHART_COLORS.get(ticker, TEXT))
+            df    = _get_daily_df(TICKERS[ticker])
+            if df.empty:
+                continue
+            rsi_s = df['RSI'].dropna().iloc[-bars:]
+            if len(rsi_s) < 2:
+                continue
+            current_rsi = float(rsi_s.iloc[-1])
+            is_dashed   = ticker in CHART_DASH
+            fig.add_trace(go.Scatter(
+                x=rsi_s.index, y=rsi_s.values,
+                name=ticker, mode='lines',
+                line=dict(color=color, width=2, dash='dash' if is_dashed else 'solid'),
+                hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
+            ))
+            legend_items.append((ticker, color, current_rsi))
+
+        for level, lcolor, label in [(70, RED, 'Overbought'), (50, MUTED, 'Midline'), (30, GREEN, 'Oversold')]:
+            fig.add_hline(y=level, line_dash='dash', line_color=lcolor, line_width=1,
+                          annotation_text=label, annotation_position='right',
+                          annotation_font=dict(color=lcolor, size=10, family='monospace'))
+
+        base_layout = dict(
+            template='plotly_dark', paper_bgcolor=SURFACE, plot_bgcolor=CARD,
+            font=dict(family='monospace', color=TEXT, size=11),
+            margin=dict(l=0, r=50, t=10, b=0), height=340,
+            showlegend=False, hovermode='x unified',
+            yaxis=dict(title='RSI 14', range=[0, 100], gridcolor=BORDER, zeroline=False),
+            xaxis=dict(gridcolor=BORDER, zeroline=False),
+        )
+        fig.update_layout(**base_layout)
+
+        if not legend_items:
+            return fig, '', f'Updated {now}'
+
+        rsi_color = lambda v: RED if v > 70 else (GREEN if v < 30 else (AMBER if v > 55 else MUTED))
+        legend_el = html.Div([
+            html.Span([
+                html.Span('● ', style={'color': c}),
+                html.Span(t, style={'color': TEXT, 'marginRight': '4px'}),
+                html.Span(f'{v:.1f}', style={'color': rsi_color(v), 'marginRight': '20px'}),
+            ])
+            for t, c, v in legend_items
+        ], style={'display': 'flex', 'flexWrap': 'wrap'})
+        return fig, legend_el, f'Updated {now}'
+
+    # ── Price mode (default) ───────────────────────────────────────────────────
 
     fig          = go.Figure()
     legend_items = []
@@ -1991,13 +2102,15 @@ def update_price_chart(tickers, tf, _):
 @app.callback(
     Output('chart-tickers', 'data'),
     Input({'type': 'chart-ticker-btn', 'index': dash.ALL}, 'n_clicks'),
-    State('chart-tickers', 'data'),
+    [State('chart-tickers', 'data'), State('chart-mode', 'data')],
     prevent_initial_call=True,
 )
-def toggle_chart_ticker(_, current_tickers):
+def toggle_chart_ticker(_, current_tickers, mode):
     triggered = dash.callback_context.triggered[0]['prop_id']
     ticker    = json.loads(triggered.split('.')[0])['index']
-    tickers   = list(current_tickers or ['SEMG', 'WTAI', 'JEDG'])
+    if (mode or 'price') == 'rsi' and ticker in ('SPX', 'NDQ'):
+        return current_tickers
+    tickers = list(current_tickers or ['SEMG', 'WTAI', 'JEDG'])
     if ticker in tickers:
         if len(tickers) > 1:
             tickers.remove(ticker)
@@ -2008,11 +2121,14 @@ def toggle_chart_ticker(_, current_tickers):
 
 @app.callback(
     [Output({'type': 'chart-ticker-btn', 'index': t}, 'style') for t in CHART_TICKERS_ALL],
-    Input('chart-tickers', 'data'),
+    [Input('chart-tickers', 'data'), Input('chart-mode', 'data')],
 )
-def style_chart_ticker_buttons(tickers):
-    selected = set(tickers or ['SEMG', 'WTAI', 'JEDG'])
-    return [_chart_ticker_btn_style(t, t in selected) for t in CHART_TICKERS_ALL]
+def style_chart_ticker_buttons(tickers, mode):
+    selected  = set(tickers or ['SEMG', 'WTAI', 'JEDG'])
+    rsi_mode  = (mode or 'price') == 'rsi'
+    return [_chart_ticker_btn_style(t, t in selected,
+                                    greyed=(rsi_mode and t in ('SPX', 'NDQ')))
+            for t in CHART_TICKERS_ALL]
 
 
 # ── ISA callback ──────────────────────────────────────────────────────────────
