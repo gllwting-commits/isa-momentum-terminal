@@ -84,8 +84,8 @@ ORANGE   = '#f97316'
 DIM      = SLATE_THEME['dim']
 
 CHART_COLORS = {
-    'JEDG': '#f43f5e', 'SEMG': '#22d3ee', 'SEMI': '#3b82f6', 'VDPG': '#84cc16',
-    'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#a78bfa',
+    'JEDG': '#ef4444', 'SEMG': '#22d3ee', 'SEMI': '#6366f1', 'VDPG': '#84cc16',
+    'WTAI': '#10b981', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
     'SPX':  '#94a3b8', 'NDQ':  '#fb923c',
 }
 
