@@ -2041,9 +2041,10 @@ def update_price_chart(tickers, tf, _, mode):
                 continue
             vol_data.append((ticker, color, vol_s, df))
 
-        vol_data.sort(key=lambda x: float(x[2].iloc[-1]), reverse=True)
+        vol_data.sort(key=lambda x: float(x[2].mean()), reverse=True)
 
         for ticker, color, vol_s, df in vol_data:
+            period_avg = float(vol_s.mean())
             fig.add_trace(go.Bar(
                 x=vol_s.index, y=vol_s.values,
                 name=ticker, marker_color=color, opacity=0.8,
@@ -2058,7 +2059,7 @@ def update_price_chart(tickers, tf, _, mode):
                     opacity=0.5, showlegend=False,
                     hovertemplate=f'{ticker} 20d avg: %{{y:,.0f}}<extra></extra>',
                 ))
-            legend_items.append((ticker, color, float(vol_s.iloc[-1])))
+            legend_items.append((ticker, color, period_avg))
 
         if not legend_items:
             fig.update_layout(
@@ -2082,7 +2083,7 @@ def update_price_chart(tickers, tf, _, mode):
             html.Span([
                 html.Span('■ ', style={'color': c}),
                 html.Span(t, style={'color': TEXT, 'marginRight': '4px'}),
-                html.Span(f'{int(v):,}', style={'color': MUTED, 'marginRight': '20px'}),
+                html.Span(f'avg {int(v):,}', style={'color': MUTED, 'marginRight': '20px'}),
             ])
             for t, c, v in legend_items
         ], style={'display': 'flex', 'flexWrap': 'wrap'})
