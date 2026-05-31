@@ -69,6 +69,37 @@ SLATE_THEME = {
     'text':     '#dde5f0',
 }
 
+THEMES = {
+    'Slate':    {'bg': '#0f1117', 'surface': '#161b27', 'card': '#1c2333', 'border': '#253047',
+                 'border_l': '#2d3a54', 'accent': '#f59e0b', 'green': '#10b981', 'red': '#ef4444',
+                 'amber': '#f59e0b', 'muted': '#8b9ab0', 'dim': '#3d4f68', 'text': '#dde5f0',
+                 'header_border': '#f59e0b', 'border_radius': '10px'},
+    'Dusk':     {'bg': '#1a0a2e', 'surface': '#2d1b69', 'card': '#1e1035', 'border': '#4c2885',
+                 'border_l': '#6b21a8', 'accent': '#a855f7', 'green': '#10b981', 'red': '#ef4444',
+                 'amber': '#f59e0b', 'muted': '#9ca3af', 'dim': '#6b21a8', 'text': '#e9d5ff',
+                 'header_border': '#a855f7', 'border_radius': '10px'},
+    'Carbon':   {'bg': '#0d0d0d', 'surface': '#171717', 'card': '#1c1c1c', 'border': '#2d2d2d',
+                 'border_l': '#404040', 'accent': '#3b82f6', 'green': '#22c55e', 'red': '#ef4444',
+                 'amber': '#f59e0b', 'muted': '#737373', 'dim': '#404040', 'text': '#e5e5e5',
+                 'header_border': '#3b82f6', 'border_radius': '8px'},
+    'Midnight': {'bg': '#0a0f1e', 'surface': '#0f1729', 'card': '#141f35', 'border': '#1e2d4a',
+                 'border_l': '#2d4a6f', 'accent': '#60a5fa', 'green': '#34d399', 'red': '#f87171',
+                 'amber': '#fbbf24', 'muted': '#64748b', 'dim': '#1e3a5f', 'text': '#e2e8f0',
+                 'header_border': '#60a5fa', 'border_radius': '12px'},
+    'Terminal': {'bg': '#000000', 'surface': '#001100', 'card': '#001a00', 'border': '#003300',
+                 'border_l': '#004400', 'accent': '#00ff41', 'green': '#00ff41', 'red': '#ff4444',
+                 'amber': '#ffaa00', 'muted': '#00aa20', 'dim': '#003300', 'text': '#00ff41',
+                 'header_border': '#00ff41', 'border_radius': '4px'},
+    'Alpine':   {'bg': '#1e2733', 'surface': '#252f3d', 'card': '#2c3848', 'border': '#3d4f68',
+                 'border_l': '#4a6080', 'accent': '#38bdf8', 'green': '#34d399', 'red': '#f87171',
+                 'amber': '#fbbf24', 'muted': '#94a3b8', 'dim': '#475569', 'text': '#f1f5f9',
+                 'header_border': '#38bdf8', 'border_radius': '10px'},
+    'Parchment':{'bg': '#f5f0e8', 'surface': '#faf7f0', 'card': '#ffffff', 'border': '#d4c5a9',
+                 'border_l': '#b5a48a', 'accent': '#b45309', 'green': '#15803d', 'red': '#dc2626',
+                 'amber': '#d97706', 'muted': '#78716c', 'dim': '#a8a29e', 'text': '#292524',
+                 'header_border': '#b45309', 'border_radius': '10px'},
+}
+
 BG       = SLATE_THEME['bg']
 SURFACE  = SLATE_THEME['surface']
 CARD     = SLATE_THEME['card']
@@ -1816,8 +1847,21 @@ app.layout = html.Div([
                 'color': MUTED, 'margin': '2px 0 0 0', 'fontSize': '11px',
             }),
         ]),
-        html.Div(id='header-updated', style={'color': MUTED, 'fontSize': '11px', 'textAlign': 'right'}),
-    ], style={
+        html.Div([
+            html.Div(id='header-updated', style={'color': MUTED, 'fontSize': '11px', 'marginBottom': '6px'}),
+            html.Div([
+                html.Span('Theme:', style={'color': MUTED, 'fontSize': '10px',
+                                           'fontFamily': 'monospace', 'marginRight': '6px'}),
+                dcc.Dropdown(
+                    id='theme-dropdown',
+                    options=[{'label': t, 'value': t} for t in THEMES],
+                    value='Slate',
+                    clearable=False,
+                    style={'width': '110px', 'fontSize': '11px', 'fontFamily': 'monospace'},
+                ),
+            ], style={'display': 'flex', 'alignItems': 'center'}),
+        ], style={'textAlign': 'right'}),
+    ], id='header-bar', style={
         'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
         'padding': '14px 20px', 'background': SURFACE, 'borderBottom': f'1px solid {BORDER}',
     }),
@@ -1839,7 +1883,7 @@ app.layout = html.Div([
             ],
             colors={'border': BORDER, 'primary': ACCENT, 'background': BG},
         ),
-    ], style={'background': CARD, 'borderBottom': f'1px solid {BORDER}', 'marginBottom': '20px'}),
+    ], id='tabs-bar', style={'background': CARD, 'borderBottom': f'1px solid {BORDER}', 'marginBottom': '20px'}),
 
     # ── Tab content ───────────────────────────────────────────────────────────
     html.Div(id='tab-content',
@@ -1856,7 +1900,7 @@ app.layout = html.Div([
     dcc.Store(id='snapshot-tf',   data='1d'),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
-], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
+], id='app-root', style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
 
 
 # ── Tab router ────────────────────────────────────────────────────────────────
@@ -2713,6 +2757,27 @@ def update_isa(invested):
 )
 def update_macro_strip(_):
     return build_macro_strip(fetch_macro_regime())
+
+
+# ── Theme switcher ────────────────────────────────────────────────────────────
+@app.callback(
+    [Output('app-root',          'style'),
+     Output('header-bar',        'style'),
+     Output('tabs-bar',          'style'),
+     Output('macro-regime-strip','style')],
+    Input('theme-dropdown', 'value'),
+)
+def apply_theme(theme_name):
+    t = THEMES.get(theme_name, THEMES['Slate'])
+    return (
+        {'background': t['bg'], 'minHeight': '100vh', 'fontFamily': 'monospace'},
+        {'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center',
+         'padding': '14px 20px', 'background': t['surface'],
+         'borderBottom': f'1px solid {t["border"]}'},
+        {'background': t['card'], 'borderBottom': f'1px solid {t["border"]}',
+         'marginBottom': '20px'},
+        {'background': t['surface']},
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

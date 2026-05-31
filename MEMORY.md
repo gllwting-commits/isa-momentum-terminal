@@ -299,17 +299,87 @@ BUILT: HIGH conviction regime modifier in build_summary_table().
   Modified: build_macro_strip() (badge style only),
     build_summary_table() (one-line cache read at top, modifier in conv_cell).
 
-## REMAINING BUILD ITEMS
-1. Task 2 SOX — verify Monday market open. Cross-check SOX value
-   against TradingView. Confirm arrow direction matches trend.
+### 2026-05-31 — v1.14.0 visual overhaul + Charts tab + theme switcher
 
-4. SGLS Position Review — URGENT
+#### T1–T4: Charts tab (earlier sessions, logged here for completeness)
+BUILT: Charts tab with dcc.Tabs routing.
+  Price mode: multi-ticker normalised price chart. Ticker buttons
+    toggle membership. Legend sorted by last value descending.
+  RSI mode: RSI 14 for each selected ETF. Reference lines at 70/50/30
+    labelled overbought/momentum/oversold. Legend sorted by last value.
+  Volume mode: grouped bar chart + 20d rolling average line.
+    Legend shows period average (not last bar). IWMO/SGLS excluded.
+  Timeframes: 1W / 1M / 3M / 6M / 1Y. SPX and NDQ toggleable overlays.
+
+#### T7: Snapshot section below chart
+BUILT: Compact stat tracks (dot-lane design) below price chart.
+  Each ETF has one row. Stats shown as dot positioned on a labelled
+  scale lane. Conviction badge in first column.
+  Staircase boundary labels on each lane.
+  Snapshot background: #f0f4ff light blue-grey (distinct from card).
+  Timeframe toggle: 1D / 1W / 1M / 3M / 6M / 1Y.
+    1D shows: RSI + 52W DD + RS 30d + Day%.
+    Non-1D shows: RSI + Period Return + RS vs Benchmark (no Day%).
+    1Y: RSI uses iloc[-1] (last row); RS uses slice_bars to get
+      correct window — these differ because yfinance returns more
+      than 252 rows for 1Y period.
+  FIXED: 1Y N/A bug — RSI always iloc[-1]; RS uses slice_bars window.
+  FIXED: snapshot background was dark; added explicit light bg + dark
+    text overrides for all stat labels.
+
+#### T8: DEFERRED
+News & Catalysts tab: requires Anthropic API credit.
+  Implementation paused — no credit configured on Render.
+  Resume when API credit is available.
+
+#### T9: Theme switcher — SIMPLIFIED
+BUILT: THEMES dict (7 themes): Slate, Dusk, Carbon, Midnight,
+  Terminal, Alpine, Parchment. Values: bg/surface/card/border/
+  border_l/accent/green/red/amber/muted/dim/text/header_border/
+  border_radius.
+BUILT: theme-dropdown in header (dcc.Dropdown, 110px, 11px monospace).
+  Selected theme updates: app-root bg, header-bar bg, tabs-bar bg,
+  macro-regime-strip bg.
+DEFERRED: Full propagation (card interiors, charts, signal table).
+  Would require threading theme as State through 200+ inline style
+  references across all builder functions. Deferred — not worth the
+  churn for a personal single-user tool where Slate is the default.
+VERIFIED: outer chrome visibly changes on theme selection.
+  Theme persists when switching tabs (dropdown value held in DOM).
+
+## CURRENT STATE
+Version: v1.14.0
+Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
+  (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT, RSI 14,
+  SMA POSITION, 52W DRAWDOWN, RS TREND 30d (+ persist Nd + flip count).
+Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y (level
+  + 10d delta), VIX, DXY, SOX. SOX display only — not scored.
+  Fetch failure shows N/A in grey.
+Portfolio: JEDG, SEMG, SEMI, VDPG, WTAI, SGLS, FLXK.
+  IWMO removed 2026-05-30. SEMI.L added 2026-05-30.
+Charts tab: Price / RSI 14 / Volume modes. Timeframes 1W–1Y.
+  Snapshot stat lanes below chart. Timeframe toggle 1D–1Y.
+Theme switcher: outer chrome only (bg/header/tabs/macro strip).
+  Card interiors stay Slate until full propagation is built.
+
+## REMAINING BUILD ITEMS
+1. SOX verify — cross-check SOX value against TradingView at Monday
+   market open. Confirm arrow direction matches trend.
+
+2. T8 News & Catalysts tab — DEFERRED until Anthropic API credit
+   is configured on Render.
+
+3. SGLS Position Review — URGENT
    -21.6% drawdown while gold at USD ATH.
    Decision needed: keep SGLS hedged or switch to IGLN.L unhedged.
 
-5. Signal Audit Log — HIGH PRIORITY
+4. Signal Audit Log — HIGH PRIORITY
    In-memory age stamps live. Full log: persistent JSON, old→new
    transitions, price/RSI at change, dedicated Signal History tab.
+
+5. Theme full propagation — LOW PRIORITY
+   Thread theme State through builder functions so card interiors
+   also respond. Parchment (light) theme unusable without this.
 
 6. Correlation Heatmap — LOW PRIORITY
 7. Vol-Adjusted Sizing — LOWEST PRIORITY (wrong tool for mandate)
