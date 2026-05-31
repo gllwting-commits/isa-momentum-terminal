@@ -44,6 +44,8 @@ RS_BENCHMARKS = {
     'FLXK': ('EWY',    None),
 }
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
+TF_BARS    = {'1W': 5, '1M': 21, '3M': 63, '6M': 126, '1Y': 252}
+CHART_TICKERS_ALL = ETFS + ['SPX', 'NDQ']
 _INDICATOR_DAYS = 365
 ISA_ALLOWANCE  = 20_000
 MONTHLY_INVEST = 1_667
@@ -80,6 +82,12 @@ AMBER    = SLATE_THEME['amber']
 YELLOW   = SLATE_THEME['amber']
 ORANGE   = '#f97316'
 DIM      = SLATE_THEME['dim']
+
+CHART_COLORS = {
+    'SGLS': '#f59e0b', 'VDPG': '#3b82f6', 'WTAI': '#10b981', 'FLXK': '#f43f5e',
+    'SEMG': '#a78bfa', 'SEMI': '#06b6d4', 'JEDG': '#fb923c',
+    'SPX':  '#84cc16', 'NDQ':  '#e879f9',
+}
 
 SIG_COLOR  = {'BUY': GREEN, 'HOLD': YELLOW, 'SELL': RED}
 SIG_DESC   = {
@@ -391,6 +399,29 @@ def fetch_intraday(ticker: str, daily: dict) -> dict:
         chg_pct = (close / prev - 1) * 100 if prev else 0.0
         return {'close': close, 'chg_pct': chg_pct, 'vol_ratio': None,
                 'is_intraday': False, 'vol_partial': False}
+
+
+_bench_cache: dict = {}
+
+
+def fetch_benchmark_price(yf_ticker: str) -> 'pd.Series | None':
+    """Close series for SPX/NDQ, cached per calendar day."""
+    today  = datetime.today().date()
+    cached = _bench_cache.get(yf_ticker)
+    if cached and cached['date'] == today:
+        return cached['series']
+    try:
+        df = yf.download(yf_ticker, period='1y', interval='1d', progress=False, auto_adjust=True)
+        if df.empty:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        series = df['Close'].dropna()
+        _bench_cache[yf_ticker] = {'date': today, 'series': series}
+        return series
+    except Exception as e:
+        print(f'[WARN] fetch_benchmark_price({yf_ticker}): {e}')
+        return None
 
 
 def fetch_rs_ratio(etf: str) -> float | None:
@@ -775,6 +806,17 @@ def _view_btn_style(this_val: str, current_val: str) -> dict:
         'fontFamily': 'monospace',
         'fontSize': '12px',
         'fontWeight': '600',
+    }
+
+
+def _chart_ticker_btn_style(ticker: str, active: bool) -> dict:
+    color = CHART_COLORS.get(ticker, TEXT)
+    return {
+        'background': color if active else 'transparent',
+        'color': '#0f1117' if active else color,
+        'border': f'1px solid {color}',
+        'borderRadius': '20px', 'padding': '4px 12px', 'cursor': 'pointer',
+        'fontFamily': 'monospace', 'fontSize': '12px', 'fontWeight': '700',
     }
 
 
@@ -1538,6 +1580,7 @@ app.layout = html.Div([
     dcc.Store(id='price-period',  data='today'),
     dcc.Store(id='summary-view',  data='table'),
     dcc.Store(id='sort-mode',     data='daypct'),
+    dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI', 'JEDG']),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
@@ -1547,9 +1590,10 @@ app.layout = html.Div([
 @app.callback(
     Output('tab-content', 'children'),
     Input('main-tabs', 'value'),
-    [State('selected-etf', 'data'), State('selected-tf', 'data'), State('price-period', 'data')],
+    [State('selected-etf', 'data'), State('selected-tf', 'data'),
+     State('price-period', 'data'), State('chart-tickers', 'data')],
 )
-def render_tab(tab, sel_etf, sel_tf, price_period):
+def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers):
     if tab == 'signal-summary':
         period = price_period or 'today'
         return html.Div([
@@ -1602,40 +1646,25 @@ def render_tab(tab, sel_etf, sel_tf, price_period):
         ])
 
     if tab == 'charts':
+        active_tickers = set(chart_tickers or ['SEMG', 'WTAI', 'JEDG'])
         return html.Div([
             card(html.Div(
-                [html.Button(etf, id={'type': 'etf-btn', 'index': etf}, n_clicks=0,
-                             style=etf_btn_style(etf, sel_etf or 'JEDG'))
-                 for etf in ETFS],
+                [html.Button(t, id={'type': 'chart-ticker-btn', 'index': t}, n_clicks=0,
+                             style=_chart_ticker_btn_style(t, t in active_tickers))
+                 for t in CHART_TICKERS_ALL],
                 style={'display': 'flex', 'gap': '8px', 'flexWrap': 'wrap'},
             ), {'padding': '14px 16px'}),
 
             card([
-                html.Div([
-                    html.Div([
-                        html.H2(id='chart-title', style={
-                            'color': TEXT, 'margin': '0', 'fontSize': '15px', 'fontWeight': '700',
-                        }),
-                        html.P(id='chart-subtitle', style={'color': MUTED, 'margin': '2px 0 0 0', 'fontSize': '11px'}),
-                    ]),
-                    html.Div([
-                        html.Div(id='price-display'),
-                        html.Div(id='signal-badge', style={'marginTop': '6px'}),
-                    ], style={'textAlign': 'right'}),
-                ], style={'display': 'flex', 'justifyContent': 'space-between',
-                          'alignItems': 'flex-start', 'marginBottom': '14px'}),
-
                 html.Div(
                     [html.Button(tf, id={'type': 'tf-btn', 'index': tf}, n_clicks=0,
                                  style=tf_btn_style(tf, sel_tf or '1M'))
                      for tf in TIMEFRAMES],
-                    style={'display': 'flex', 'gap': '4px', 'marginBottom': '10px'},
+                    style={'display': 'flex', 'gap': '4px', 'marginBottom': '12px'},
                 ),
-                html.Div(id='signal-desc', style={
-                    'color': MUTED, 'fontSize': '11px', 'marginBottom': '10px',
-                    'padding': '6px 10px', 'background': BG, 'borderRadius': '6px',
-                }),
-                dcc.Loading(dcc.Graph(id='main-chart', config={'displayModeBar': False}), color=ACCENT),
+                dcc.Loading(dcc.Graph(id='price-chart', config={'displayModeBar': False}), color=ACCENT),
+                html.Div(id='price-chart-legend',
+                         style={'marginTop': '10px', 'fontSize': '12px', 'fontFamily': 'monospace'}),
             ]),
         ])
 
@@ -1858,169 +1887,114 @@ def style_tf_buttons(selected):
     return [tf_btn_style(t, selected) for t in TIMEFRAMES]
 
 
-# ── Chart callback ────────────────────────────────────────────────────────────
+# ── Price chart callback (T4) ─────────────────────────────────────────────────
 @app.callback(
     [
-        Output('main-chart',     'figure'),
-        Output('chart-title',    'children'),
-        Output('chart-subtitle', 'children'),
-        Output('price-display',  'children'),
-        Output('signal-badge',   'children'),
-        Output('signal-desc',    'children'),
-        Output('header-updated', 'children'),
+        Output('price-chart',        'figure'),
+        Output('price-chart-legend', 'children'),
+        Output('header-updated',     'children'),
     ],
     [
-        Input('selected-etf', 'data'),
-        Input('selected-tf',  'data'),
-        Input('refresh',      'n_intervals'),
+        Input('chart-tickers', 'data'),
+        Input('selected-tf',   'data'),
+        Input('refresh',       'n_intervals'),
     ],
 )
-def update_chart(etf, tf, _):
-    ticker     = TICKERS[etf]
-    days       = TIMEFRAMES[tf]
-    df         = fetch_data(ticker, max(days, _INDICATOR_DAYS))
-    now        = datetime.now().strftime('%H:%M:%S')
-    has_volume = etf in VOLUME_ETFS
+def update_price_chart(tickers, tf, _):
+    bars    = TF_BARS.get(tf or '1M', 21)
+    now     = datetime.now().strftime('%H:%M:%S')
+    active  = list(tickers or ['SEMG', 'WTAI', 'JEDG'])
 
-    def empty_fig(msg='No data available'):
-        fig = go.Figure()
-        fig.update_layout(
-            template='plotly_dark', paper_bgcolor=CARD, plot_bgcolor=CARD, height=380,
-            annotations=[dict(text=msg, x=0.5, y=0.5, showarrow=False,
-                              font=dict(color=MUTED, size=15))],
-        )
-        return fig
+    fig          = go.Figure()
+    legend_items = []
 
-    if df.empty:
-        return empty_fig(), etf, ticker, '', '', 'Data unavailable', f'Updated {now}'
+    for ticker in active:
+        color = CHART_COLORS.get(ticker, TEXT)
+        if ticker == 'SPX':
+            series = fetch_benchmark_price('^GSPC')
+        elif ticker == 'NDQ':
+            series = fetch_benchmark_price('^IXIC')
+        else:
+            df = _get_daily_df(TICKERS[ticker])
+            series = df['Close'].dropna() if not df.empty else None
 
-    cutoff     = pd.Timestamp.today() - pd.Timedelta(days=days)
-    display_df = df[df.index >= cutoff]
-    if display_df.empty:
-        display_df = df.tail(20)
+        if series is None or len(series) < 2:
+            continue
 
-    close   = float(df['Close'].iloc[-1])
-    prev    = float(df['Close'].iloc[-2]) if len(df) > 1 else close
-    chg     = close - prev
-    chg_pct = (chg / prev * 100) if prev else 0
-    rsi_s   = df['RSI'].dropna()
-    sma20_s = df['SMA20'].dropna()
-    sma50_s = df['SMA50'].dropna()
-    rsi     = float(rsi_s.iloc[-1])   if not rsi_s.empty   else 50.0
-    sma20   = float(sma20_s.iloc[-1]) if not sma20_s.empty else close
-    sma50   = float(sma50_s.iloc[-1]) if not sma50_s.empty else close
-    signal  = get_signal(rsi, close, sma20, sma50)
+        series = series.iloc[-bars:]
+        if len(series) < 2:
+            continue
 
-    # Determine volume source
-    wtai_volume = etf == 'WTAI'
-    show_volume = has_volume or wtai_volume
+        norm       = (series / series.iloc[0]) * 100
+        period_ret = (series.iloc[-1] / series.iloc[0] - 1) * 100
 
-    if show_volume:
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                            row_heights=[0.55, 0.25, 0.20], vertical_spacing=0.03)
-    else:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                            row_heights=[0.70, 0.30], vertical_spacing=0.04)
-
-    fig.add_trace(go.Candlestick(
-        x=display_df.index,
-        open=display_df['Open'], high=display_df['High'],
-        low=display_df['Low'],   close=display_df['Close'],
-        name='Price',
-        increasing_line_color=GREEN, increasing_fillcolor=GREEN,
-        decreasing_line_color=RED,   decreasing_fillcolor=RED,
-    ), row=1, col=1)
-
-    for col_name, color in [('SMA20', '#ffa657'), ('SMA50', '#d2a8ff')]:
-        s = display_df[col_name].dropna()
-        if not s.empty:
-            fig.add_trace(go.Scatter(x=s.index, y=s, name=col_name,
-                                     line=dict(color=color, width=1.5)), row=1, col=1)
-
-    rsi_disp = display_df['RSI'].dropna()
-    if not rsi_disp.empty:
         fig.add_trace(go.Scatter(
-            x=rsi_disp.index, y=rsi_disp, name='RSI 14',
-            line=dict(color=ACCENT, width=1.5),
-            fill='tozeroy', fillcolor='rgba(245,158,11,0.10)',
-        ), row=2, col=1)
-        for level, lcolor in [(70, RED), (30, GREEN), (50, BORDER)]:
-            fig.add_hline(y=level, line_dash='dot', line_color=lcolor, line_width=1, row=2, col=1)
+            x=norm.index, y=norm.values,
+            name=ticker,
+            line=dict(color=color, width=2),
+            hovertemplate=f'{ticker}: %{{y:.1f}}<extra></extra>',
+        ))
+        legend_items.append((ticker, color, period_ret))
 
-    if wtai_volume:
-        proxy_df = fetch_data(WTAI_VOL_PROXY, max(days, _INDICATOR_DAYS))
-        if not proxy_df.empty:
-            proxy_disp = proxy_df[proxy_df.index >= cutoff]
-            if proxy_disp.empty:
-                proxy_disp = proxy_df.tail(20)
-            vol_colors = [
-                GREEN if float(r['Close']) >= float(r['Open']) else RED
-                for _, r in proxy_disp.iterrows()
-            ]
-            fig.add_trace(go.Bar(
-                x=proxy_disp.index, y=proxy_disp['Volume'],
-                name='Volume (AIAG.L)', marker_color=vol_colors, opacity=0.65,
-            ), row=3, col=1)
-            avg_proxy = proxy_df['Volume'].rolling(20).mean()
-            avg_proxy_disp = avg_proxy[avg_proxy.index >= cutoff].dropna()
-            if not avg_proxy_disp.empty:
-                fig.add_trace(go.Scatter(
-                    x=avg_proxy_disp.index, y=avg_proxy_disp, name='Avg Vol 20d',
-                    line=dict(color=YELLOW, width=1.2, dash='dot'),
-                ), row=3, col=1)
-    elif has_volume and 'Volume' in display_df.columns:
-        vol_colors = [
-            GREEN if float(row['Close']) >= float(row['Open']) else RED
-            for _, row in display_df.iterrows()
-        ]
-        fig.add_trace(go.Bar(
-            x=display_df.index, y=display_df['Volume'],
-            name='Volume', marker_color=vol_colors, opacity=0.65,
-        ), row=3, col=1)
-        avg_vol_s = df['Volume'].rolling(20).mean()
-        avg_disp  = avg_vol_s[avg_vol_s.index >= cutoff].dropna()
-        if not avg_disp.empty:
-            fig.add_trace(go.Scatter(
-                x=avg_disp.index, y=avg_disp, name='Avg Vol 20d',
-                line=dict(color=YELLOW, width=1.2, dash='dot'),
-            ), row=3, col=1)
+    if not legend_items:
+        fig.update_layout(
+            template='plotly_dark', paper_bgcolor=SURFACE, plot_bgcolor=CARD, height=340,
+            annotations=[dict(text='No data', x=0.5, y=0.5, showarrow=False,
+                              font=dict(color=MUTED, size=14))],
+        )
+        return fig, '', f'Updated {now}'
 
-    chart_height = 460 if show_volume else 400
     fig.update_layout(
-        template='plotly_dark', paper_bgcolor=CARD, plot_bgcolor=CARD,
+        template='plotly_dark',
+        paper_bgcolor=SURFACE, plot_bgcolor=CARD,
         font=dict(family='monospace', color=TEXT, size=11),
-        margin=dict(l=0, r=0, t=0, b=0), height=chart_height, showlegend=True,
-        legend=dict(orientation='h', y=1.03, x=0, font=dict(size=10), bgcolor='rgba(0,0,0,0)'),
-        xaxis_rangeslider_visible=False, hovermode='x unified',
+        margin=dict(l=0, r=0, t=10, b=0), height=340,
+        showlegend=False, hovermode='x unified',
+        yaxis=dict(title='Indexed (start = 100)', gridcolor=BORDER, zeroline=False),
+        xaxis=dict(gridcolor=BORDER, zeroline=False),
     )
-    fig.update_xaxes(gridcolor=BORDER, zeroline=False)
-    fig.update_yaxes(gridcolor=BORDER, zeroline=False)
-    fig.update_yaxes(title_text='Price (p)', row=1, col=1, title_font_size=10)
-    fig.update_yaxes(title_text='RSI',       row=2, col=1, range=[0, 100], title_font_size=10)
-    if show_volume:
-        vol_label = 'Vol (AIAG.L)' if wtai_volume else 'Volume'
-        fig.update_yaxes(title_text=vol_label, row=3, col=1, title_font_size=10)
 
-    arrow    = '+' if chg >= 0 else ''
-    c_color  = GREEN if chg >= 0 else RED
-    price_el = html.Div([
-        html.Span(f'{close:.2f}p', style={'color': TEXT, 'fontSize': '20px', 'fontWeight': '700'}),
-        html.Span(f'  {arrow}{chg_pct:.2f}%', style={'color': c_color, 'fontSize': '13px', 'marginLeft': '6px'}),
-        html.Br(),
-        html.Span(f'RSI {rsi:.1f}  ·  SMA20 {sma20:.1f}  ·  SMA50 {sma50:.1f}',
-                  style={'color': MUTED, 'fontSize': '10px'}),
-    ])
-    sig_color = SIG_COLOR[signal]
-    badge = html.Span(signal, style={
-        'background': sig_color, 'color': '#000' if signal == 'BUY' else '#fff',
-        'padding': '3px 12px', 'borderRadius': '20px', 'fontWeight': '700', 'fontSize': '11px',
-    })
+    legend_el = html.Div([
+        html.Span([
+            html.Span('● ', style={'color': color}),
+            html.Span(ticker, style={'color': TEXT, 'marginRight': '4px'}),
+            html.Span(
+                f'{ret:+.1f}%',
+                style={'color': GREEN if ret >= 0 else RED, 'marginRight': '20px'},
+            ),
+        ])
+        for ticker, color, ret in legend_items
+    ], style={'display': 'flex', 'flexWrap': 'wrap'})
 
-    return (fig,
-            f'{etf}  —  {ETF_NAMES.get(etf, "")}',
-            f'{ticker}  ·  {tf} chart',
-            price_el, badge, SIG_DESC[signal],
-            f'Updated {now}')
+    return fig, legend_el, f'Updated {now}'
+
+
+# ── Chart ticker multi-select callbacks ───────────────────────────────────────
+@app.callback(
+    Output('chart-tickers', 'data'),
+    Input({'type': 'chart-ticker-btn', 'index': dash.ALL}, 'n_clicks'),
+    State('chart-tickers', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_chart_ticker(_, current_tickers):
+    triggered = dash.callback_context.triggered[0]['prop_id']
+    ticker    = json.loads(triggered.split('.')[0])['index']
+    tickers   = list(current_tickers or ['SEMG', 'WTAI', 'JEDG'])
+    if ticker in tickers:
+        if len(tickers) > 1:
+            tickers.remove(ticker)
+    else:
+        tickers.append(ticker)
+    return tickers
+
+
+@app.callback(
+    [Output({'type': 'chart-ticker-btn', 'index': t}, 'style') for t in CHART_TICKERS_ALL],
+    Input('chart-tickers', 'data'),
+)
+def style_chart_ticker_buttons(tickers):
+    selected = set(tickers or ['SEMG', 'WTAI', 'JEDG'])
+    return [_chart_ticker_btn_style(t, t in selected) for t in CHART_TICKERS_ALL]
 
 
 # ── ISA callback ──────────────────────────────────────────────────────────────
