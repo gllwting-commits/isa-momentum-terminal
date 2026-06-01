@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from dash import Input, Output, State, dcc, html
+from dash import ALL, Input, Output, State, dcc, html
 from plotly.subplots import make_subplots
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -2025,13 +2025,14 @@ app.layout = html.Div([
     dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI', 'JEDG']),
     dcc.Store(id='chart-mode',    data='price'),
     dcc.Store(id='snapshot-tf',   data='1d'),
+    dcc.Store(id='radar-pinned',  data=[]),
     dcc.Interval(id='refresh', interval=60_000, n_intervals=0),
 
 ], id='app-root', style={'background': BG, 'minHeight': '100vh', 'fontFamily': 'monospace'})
 
 
 # ── Radar tab ─────────────────────────────────────────────────────────────────
-def build_radar_table(rows: list) -> html.Table:
+def build_radar_table(rows: list, pin_pinned: list = []) -> html.Table:
     header = html.Tr([
         html.Th(h, style={**TH_STYLE})
         for h in ['ETF', 'NAME', 'RSI 14', 'RS vs SWDA', '52W DD', 'SIGNAL']
@@ -2068,13 +2069,34 @@ def build_radar_table(rows: list) -> html.Table:
         dd_c     = GREEN if dd > -5 else (RED if dd < -15 else AMBER)
         dd_cell  = html.Td(f'{dd:.1f}%', style={**TD_STYLE, 'color': dd_c,
                                                  'fontWeight': '700', 'fontSize': '13px'})
-        sig_cell = html.Td(
-            '✓ ENTRY' if data['signal'] else '—',
-            style={**TD_STYLE,
-                   'color': GREEN if data['signal'] else MUTED,
-                   'fontWeight': '700' if data['signal'] else '400',
-                   'fontSize': '13px'},
+        pin_worthy = (
+            data.get('rsi_cross') or
+            (data.get('rs_30d') is not None and data['rs_30d'] > 1.5) or
+            (data.get('drawdown') is not None and data['drawdown'] > -15.0)
         )
+        if pin_worthy:
+            pin_already = etf in pin_pinned
+            pin_btn = html.Button(
+                '✕ Remove' if pin_already else '＋ Charts',
+                id={'type': 'pin-radar', 'index': etf},
+                n_clicks=0,
+                style={
+                    'fontSize': '10px', 'fontFamily': 'monospace',
+                    'padding': '2px 7px', 'marginLeft': '8px',
+                    'background': 'transparent', 'cursor': 'pointer',
+                    'color': RED if pin_already else ACCENT,
+                    'border': f'1px solid {RED if pin_already else ACCENT}',
+                    'borderRadius': '3px',
+                },
+            )
+            sig_cell = html.Td(
+                [*([html.Span('✓ ENTRY', style={'color': GREEN, 'fontWeight': '700',
+                                                'fontSize': '13px'})] if data['signal'] else []),
+                 pin_btn],
+                style={**TD_STYLE, 'whiteSpace': 'nowrap'},
+            )
+        else:
+            sig_cell = html.Td('—', style={**TD_STYLE, 'color': MUTED, 'fontSize': '13px'})
         trs.append(html.Tr([
             html.Td(etf, style={**TD_STYLE, 'color': TEXT,
                                 'fontWeight': '700', 'fontSize': '14px',
@@ -2089,12 +2111,12 @@ def build_radar_table(rows: list) -> html.Table:
 # ── Tab router ────────────────────────────────────────────────────────────────
 @app.callback(
     Output('tab-content', 'children'),
-    Input('main-tabs', 'value'),
+    [Input('main-tabs', 'value'), Input('radar-pinned', 'data')],
     [State('selected-etf', 'data'), State('selected-tf', 'data'),
      State('price-period', 'data'), State('chart-tickers', 'data'),
      State('chart-mode',   'data'), State('snapshot-tf',   'data')],
 )
-def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode, snap_tf):
+def render_tab(tab, pin_pinned, sel_etf, sel_tf, price_period, chart_tickers, chart_mode, snap_tf):
     if tab == 'signal-summary':
         period = price_period or 'today'
         return html.Div([
@@ -2208,7 +2230,7 @@ def render_tab(tab, sel_etf, sel_tf, price_period, chart_tickers, chart_mode, sn
                            'fontSize': '15px', 'fontWeight': '700'}),
             html.P('RSI crossed above 60 · RS vs SWDA positive · 52W DD better than −15%',
                    style={'color': MUTED, 'fontSize': '11px', 'margin': '0 0 16px 0'}),
-            build_radar_table(radar_rows),
+            build_radar_table(radar_rows, pin_pinned or []),
         ])
 
     # ISA & Retirement
@@ -2465,9 +2487,10 @@ def style_chart_mode_buttons(mode):
         Input('selected-tf',   'data'),
         Input('refresh',       'n_intervals'),
         Input('chart-mode',    'data'),
+        Input('radar-pinned',  'data'),
     ],
 )
-def update_price_chart(tickers, tf, _, mode):
+def update_price_chart(tickers, tf, _, mode, pin_pinned):
     bars    = TF_BARS.get(tf or '1M', 21)
     now     = datetime.now().strftime('%H:%M:%S')
     active  = list(tickers or ['SEMG', 'WTAI', 'JEDG'])
@@ -2490,6 +2513,14 @@ def update_price_chart(tickers, tf, _, mode):
             if len(rsi_s) < 2:
                 continue
             rsi_data.append((ticker, color, rsi_s))
+        for pin_etf in (pin_pinned or []):
+            pin_df = _get_daily_df(WATCHLIST_TICKERS.get(pin_etf, ''))
+            if pin_df is None or pin_df.empty:
+                continue
+            rsi_s = pin_df['RSI'].dropna().iloc[-bars:]
+            if len(rsi_s) < 2:
+                continue
+            rsi_data.append((pin_etf, '#a78bfa', rsi_s))
         rsi_data.sort(key=lambda x: float(x[2].iloc[-1]), reverse=True)
         for ticker, color, rsi_s in rsi_data:
             current_rsi = float(rsi_s.iloc[-1])
@@ -2548,6 +2579,14 @@ def update_price_chart(tickers, tf, _, mode):
             if len(vol_s) < 1:
                 continue
             vol_data.append((ticker, color, vol_s, df))
+        for pin_etf in (pin_pinned or []):
+            pin_df = _get_daily_df(WATCHLIST_TICKERS.get(pin_etf, ''))
+            if pin_df is None or pin_df.empty or 'Volume' not in pin_df.columns:
+                continue
+            vol_s = pin_df['Volume'].dropna().iloc[-bars:]
+            if len(vol_s) < 1:
+                continue
+            vol_data.append((pin_etf, '#a78bfa', vol_s, pin_df))
 
         vol_data.sort(key=lambda x: float(x[2].mean()), reverse=True)
 
@@ -2626,6 +2665,19 @@ def update_price_chart(tickers, tf, _, mode):
         period_ret  = (series.iloc[-1] / series.iloc[0] - 1) * 100
         trace_color = CHART_DASH.get(ticker, color)
         price_data.append((ticker, norm, period_ret, trace_color))
+    for pin_etf in (pin_pinned or []):
+        pin_df = _get_daily_df(WATCHLIST_TICKERS.get(pin_etf, ''))
+        if pin_df is None or pin_df.empty:
+            continue
+        close_s = pin_df['Close'].dropna()
+        if close_s.empty:
+            continue
+        series = close_s.iloc[-bars:]
+        if len(series) < 2:
+            continue
+        norm       = (series / series.iloc[0]) * 100
+        period_ret = (series.iloc[-1] / series.iloc[0] - 1) * 100
+        price_data.append((pin_etf, norm, period_ret, '#a78bfa'))
 
     price_data.sort(key=lambda x: float(x[1].iloc[-1]), reverse=True)
 
@@ -2738,9 +2790,10 @@ def style_snapshot_tf_buttons(snap_tf):
 @app.callback(
     [Output('chart-stats-bars', 'children'),
      Output('chart-conv-cards', 'children')],
-    [Input('chart-tickers', 'data'), Input('snapshot-tf', 'data'), Input('refresh', 'n_intervals')],
+    [Input('chart-tickers', 'data'), Input('snapshot-tf', 'data'),
+     Input('refresh', 'n_intervals'), Input('radar-pinned', 'data')],
 )
-def update_chart_snapshot(tickers, snap_tf, _):
+def update_chart_snapshot(tickers, snap_tf, _, pin_pinned):
     active  = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
     snap_tf = snap_tf or '1d'
     bars    = SNAP_TF_BARS[snap_tf]
@@ -2758,6 +2811,37 @@ def update_chart_snapshot(tickers, snap_tf, _):
 
     if not etf_data:
         return html.Div(), html.Div()
+
+    # ── Pinned radar ticker data ──────────────────────────────────────────────
+    pin_data: dict = {}
+    swda_df = _get_daily_df('SWDA.L')
+    for pin_etf in (pin_pinned or []):
+        if pin_etf not in WATCHLIST_TICKERS:
+            continue
+        try:
+            pin_df = _get_daily_df(WATCHLIST_TICKERS[pin_etf])
+            if pin_df is None or pin_df.empty:
+                continue
+            close_s = pin_df['Close'].dropna()
+            if len(close_s) < 2:
+                continue
+            high_52w  = float(pin_df['High'].max())
+            drawdown  = (float(close_s.iloc[-1]) - high_52w) / high_52w * 100
+            chg_pct   = float((close_s.iloc[-1] / close_s.iloc[-2] - 1) * 100)
+            rs_ratio  = None
+            if swda_df is not None and not swda_df.empty:
+                ec = close_s.squeeze().copy()
+                sc = swda_df['Close'].dropna().squeeze()
+                ec.index = pd.to_datetime(ec.index).normalize()
+                sc.index = pd.to_datetime(sc.index).normalize()
+                mg = pd.merge(ec.rename('etf'), sc.rename('swda'),
+                              left_index=True, right_index=True, how='inner')
+                if len(mg) >= 32:
+                    r        = mg['etf'] / mg['swda']
+                    rs_ratio = float((r.iloc[-1] / r.iloc[-31] - 1) * 100)
+            pin_data[pin_etf] = {'drawdown': drawdown, 'rs_ratio': rs_ratio, 'chg_pct': chg_pct}
+        except Exception:
+            continue
 
     # ── RSI row (all timeframes) ────────────────────────────────────────────
     rsi_e: list = []
@@ -2779,6 +2863,17 @@ def update_chart_snapshot(tickers, snap_tf, _):
         else:
             rsi_vc = RED if rsi_val > 70 else GREEN if rsi_val < 30 else AMBER if rsi_val > 55 else MUTED
             rsi_e.append({'etf': etf, 'val': rsi_val, 'tcol': tc, 'vcol': rsi_vc, 'dstr': f'{rsi_val:.1f}'})
+    for pin_etf in pin_data:
+        pin_df = _get_daily_df(WATCHLIST_TICKERS[pin_etf])
+        if pin_df is None or pin_df.empty or 'RSI' not in pin_df.columns:
+            continue
+        rsi_s   = pin_df['RSI'].dropna()
+        rsi_val = float(rsi_s.iloc[-1]) if len(rsi_s) >= 1 else None
+        if rsi_val is None:
+            continue
+        rsi_vc = RED if rsi_val > 70 else GREEN if rsi_val < 30 else AMBER if rsi_val > 55 else MUTED
+        rsi_e.append({'etf': pin_etf, 'val': rsi_val, 'tcol': '#a78bfa',
+                      'vcol': rsi_vc, 'dstr': f'{rsi_val:.1f}'})
 
     rsi_track = _build_stat_track(
         'RSI 14', rsi_e, 20, 100,
@@ -2809,6 +2904,20 @@ def update_chart_snapshot(tickers, snap_tf, _):
             day = d['chg_pct']
             day_vc = GREEN if day > 0 else RED
             day_e.append({'etf': etf, 'val': day, 'tcol': tc, 'vcol': day_vc, 'dstr': f'{day:+.2f}%'})
+        for pin_etf, pd_ in pin_data.items():
+            dd = pd_.get('drawdown')
+            if dd is not None:
+                dd_e.append({'etf': pin_etf, 'val': dd, 'tcol': '#a78bfa',
+                             'vcol': RED, 'dstr': f'{dd:.1f}%'})
+            rs = pd_.get('rs_ratio')
+            if rs is not None:
+                rs_vc = GREEN if rs > 1.5 else RED if rs < -1.5 else AMBER
+                rs_e.append({'etf': pin_etf, 'val': rs, 'tcol': '#a78bfa',
+                             'vcol': rs_vc, 'dstr': f'{rs:+.1f}%'})
+            day    = pd_.get('chg_pct', 0.0)
+            day_vc = GREEN if day > 0 else RED
+            day_e.append({'etf': pin_etf, 'val': day, 'tcol': '#a78bfa',
+                          'vcol': day_vc, 'dstr': f'{day:+.2f}%'})
 
         dd_track = _build_stat_track(
             '52W Drawdown', dd_e, -25, 0,
@@ -2867,6 +2976,36 @@ def update_chart_snapshot(tickers, snap_tf, _):
                 'val': rs_period if rs_period is not None else 0,
                 'tcol': tc if rs_period is not None else MUTED,
                 'vcol': rsp_vc if rs_period is not None else MUTED,
+                'dstr': f'{rs_period:+.1f}%' if rs_period is not None else 'N/A',
+            })
+        for pin_etf in pin_data:
+            pin_df = _get_daily_df(WATCHLIST_TICKERS[pin_etf])
+            if pin_df is None or pin_df.empty:
+                continue
+            close      = pin_df['Close'].dropna()
+            period_ret = ((close.iloc[-1] / close.iloc[-bars] - 1) * 100
+                          if len(close) >= bars else None)
+            pret_vc = GREEN if (period_ret or 0) > 0 else RED
+            pret_e.append({
+                'etf':  pin_etf,
+                'val':  period_ret if period_ret is not None else 0,
+                'tcol': '#a78bfa'  if period_ret is not None else MUTED,
+                'vcol': pret_vc    if period_ret is not None else MUTED,
+                'dstr': f'{period_ret:+.1f}%' if period_ret is not None else 'N/A',
+            })
+            rs_period = None
+            if swda_df is not None and not swda_df.empty:
+                swda_close = swda_df['Close'].dropna()
+                sl = min(bars, len(swda_close), len(close))
+                if sl >= 2:
+                    rs_period = ((close.iloc[-1] / close.iloc[-sl] - 1) * 100
+                                 - (swda_close.iloc[-1] / swda_close.iloc[-sl] - 1) * 100)
+            rsp_vc = GREEN if (rs_period or 0) > 0 else RED
+            rsp_e.append({
+                'etf':  pin_etf,
+                'val':  rs_period if rs_period is not None else 0,
+                'tcol': '#a78bfa' if rs_period is not None else MUTED,
+                'vcol': rsp_vc    if rs_period is not None else MUTED,
                 'dstr': f'{rs_period:+.1f}%' if rs_period is not None else 'N/A',
             })
 
@@ -2976,6 +3115,24 @@ def apply_theme(theme_name):
          'marginBottom': '20px'},
         {'background': t['surface']},
     )
+
+
+# ── Radar pin callback ────────────────────────────────────────────────────────
+@app.callback(
+    Output('radar-pinned', 'data'),
+    Input({'type': 'pin-radar', 'index': ALL}, 'n_clicks'),
+    State('radar-pinned', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_pin_radar(n_clicks_list, pin_pinned):
+    pin_pinned = list(pin_pinned or [])
+    ctx = dash.callback_context
+    if not ctx.triggered or not isinstance(ctx.triggered_id, dict):
+        raise dash.exceptions.PreventUpdate
+    pin_etf = ctx.triggered_id['index']
+    if pin_etf in pin_pinned:
+        return [e for e in pin_pinned if e != pin_etf]
+    return pin_pinned + [pin_etf]
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

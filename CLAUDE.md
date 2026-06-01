@@ -172,8 +172,36 @@ build_radar_table(rows) — new function
   Simple html.Table. Placed before render_tab().
 
 Radar tab fires via existing render_tab() router.
-  No new callback, no new dcc.Interval, no new dcc.Store.
-  Repeat tab visits within same day = cache hits, no refetch.
+  No new dcc.Interval. Repeat tab visits = cache hits, no refetch.
+
+### RADAR PIN TO CHARTS
+dcc.Store(id='radar-pinned', data=[]) — session-only, resets on refresh.
+  Do NOT persist across sessions. This is intentional.
+
+toggle_pin_radar callback:
+  Input({'type':'pin-radar','index':ALL},'n_clicks') — MUST use ALL wildcard.
+  Do NOT use explicit per-ticker Inputs — buttons are dynamically rendered,
+  so non-signal rows have no button. Explicit IDs for missing components
+  silently kill the callback.
+  Uses ctx.triggered_id['index'] for extraction — NOT string prop_id parsing.
+
+build_radar_table(rows, pin_pinned=[]):
+  pin_worthy = rsi_cross OR rs_30d > +1.5% OR drawdown > -15% (any one).
+  ✓ ENTRY text + green border: still requires ALL THREE conditions.
+  Partial signal row: ＋ Charts button only, no ✓ ENTRY text.
+  Pinned row: button shows ✕ Remove.
+
+render_tab(): Input('radar-pinned','data') added — re-fires on pin/unpin.
+  Passes pin_pinned to build_radar_table() to update button state.
+
+update_price_chart() and update_chart_snapshot():
+  Both have Input('radar-pinned','data').
+  Pinned tickers appended to rsi_data/vol_data/price_data BEFORE sort.
+  All pinned tickers: colour #a78bfa (soft purple), solid line.
+  Snapshot: RSI, 1D dd/rs/day, multi-TF pret/rsp all include pinned rows.
+  Multi-TF RS for pinned tickers: ETF period return − SWDA period return.
+  No conviction card rendered for pinned radar tickers.
+  Do NOT use CHART_COLORS for pinned tickers — use #a78bfa only.
 
 ## BEFORE ADDING ANY NEW LSE TICKER
 1. Verify currency denomination in yfinance

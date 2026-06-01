@@ -400,8 +400,37 @@ NEW CONSTANTS: WATCHLIST, WATCHLIST_TICKERS, WATCHLIST_NAMES (lines 29–40).
 NOT TOUCHED: ETFS, TICKERS, RS_BENCHMARKS, fetch_daily(), fetch_intraday(),
   all main table columns, all existing callbacks.
 
+### 2026-06-01 — v1.18.0 Radar pin-to-Charts
+BUILT: Radar pin feature — pin any watchlist ticker to Charts tab for comparison.
+  Store: dcc.Store(id='radar-pinned', data=[]) — session-only, resets on refresh.
+  Toggle callback: toggle_pin_radar — uses Input({'type':'pin-radar','index':ALL},'n_clicks').
+    Uses ctx.triggered_id (dict) for index extraction — NOT string prop_id parsing.
+    ALL wildcard required — explicit per-ticker Inputs fail when buttons are dynamically
+    rendered (only signal/pin_worthy rows get a button).
+  Button rendering: build_radar_table(rows, pin_pinned=[]).
+    pin_worthy = rsi_cross OR rs_30d > +1.5% OR drawdown > -15%. Any one condition.
+    Full ENTRY signal (all three) still required for ✓ ENTRY text + green border.
+    Partial signal: ＋ Charts button only, no ✓ ENTRY text.
+    Pinned state: button shows ✕ Remove.
+  render_tab(): added Input('radar-pinned','data') — re-fires on pin/unpin to update
+    button text. Passes pin_pinned to build_radar_table().
+  update_price_chart(): added Input('radar-pinned','data') + pin loops in all 3 modes.
+    Price: normalised to base=100. RSI: df['RSI'] series. Volume: df['Volume'] series.
+    All pinned tickers use colour #a78bfa (soft purple), solid line.
+    Added to rsi_data/vol_data/price_data before sort — sorted into correct legend position.
+  update_chart_snapshot(): added Input('radar-pinned','data') + pin_data collection.
+    pin_data built from _get_daily_df() — drawdown, chg_pct, rs_ratio (vs SWDA.L).
+    Injected into RSI track, 1D dd/rs/day tracks, multi-TF pret/rsp tracks.
+    Multi-TF RS: period ETF return minus period SWDA return (same methodology as main ETFs).
+    No conviction card for radar tickers.
+  BUGS FIXED during build:
+    1. toggle_pin_radar used explicit per-ticker Inputs — 9/10 buttons non-existent,
+       callback silently failed. Fixed: switched to ALL wildcard + ctx.triggered_id.
+  NOT TOUCHED: CHART_COLORS, ETFS, WATCHLIST lists, fetch_daily(), fetch_intraday(),
+    fetch_radar_ticker(), build_summary_table(), all Signal Summary callbacks.
+
 ## CURRENT STATE
-Version: v1.17.0
+Version: v1.18.0
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT, RSI 14,
   SMA POSITION (+ % from SMA50 third line), 52W DRAWDOWN,
@@ -414,9 +443,12 @@ Portfolio: JEDG, SEMG, SEMI, VDPG, WTAI, SGLS, FLXK.
   IWMO removed 2026-05-30. SEMI.L added 2026-05-30.
 Charts tab: Price / RSI 14 / Volume modes. Timeframes 1W–1Y.
   Snapshot stat lanes below chart. Timeframe toggle 1D–1Y.
+  Pinned radar tickers shown in #a78bfa purple across all modes + snapshot.
 Theme switcher: outer chrome only (bg/header/tabs/macro strip).
   Card interiors stay Slate until full propagation is built.
 Radar tab: 10 watchlist ETFs, RSI crossover + RS vs SWDA + 52W DD signal logic.
+  ＋ Charts pin button on any pin_worthy row (any one condition met).
+  Pinned state persists within session, resets on page refresh.
 
 ## REMAINING BUILD ITEMS
 1. SOX verify — cross-check SOX value against TradingView at Monday
