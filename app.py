@@ -165,6 +165,32 @@ def get_action_text(rec: str, conviction: str) -> str:
     return _ACTION_TEXT.get((rec, conviction), 'Hold — monitor')
 
 
+def glance_classify(action_str: str | None) -> str:
+    if not action_str or not action_str.strip():
+        return 'WATCH'
+    s = action_str.lower()
+    if 'exit' in s or 'reduce' in s:
+        return 'ACT'
+    if 'trim' in s or 'watch' in s:
+        return 'WATCH'
+    if 'hold' in s:
+        return 'HOLD'
+    return 'WATCH'
+
+
+def glance_is_new(etf: str) -> bool:
+    entry = _signal_history.get(etf)
+    if entry is None:
+        return False
+    today     = datetime.now().date()
+    conv_at   = entry.get('conviction_at')
+    action_at = entry.get('action_at')
+    return (
+        (conv_at   is not None and conv_at.date()   == today) or
+        (action_at is not None and action_at.date() == today)
+    )
+
+
 def get_row_tint(rec: str, conviction: str) -> str:
     if rec == 'BUY':
         if conviction == 'HIGH':
