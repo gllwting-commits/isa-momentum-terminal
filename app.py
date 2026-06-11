@@ -2120,6 +2120,8 @@ app.layout = html.Div([
         dcc.Tabs(
             id='main-tabs', value='signal-summary',
             children=[
+                dcc.Tab(label='Glance',          value='glance',
+                        style=TAB_STYLE, selected_style=TAB_SELECTED),
                 dcc.Tab(label='Signal Summary', value='signal-summary',
                         style=TAB_STYLE, selected_style=TAB_SELECTED),
                 dcc.Tab(label='Charts',          value='charts',
