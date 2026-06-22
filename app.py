@@ -165,31 +165,6 @@ def get_action_text(rec: str, conviction: str) -> str:
     return _ACTION_TEXT.get((rec, conviction), 'Hold — monitor')
 
 
-def glance_classify(action_str: str | None) -> str:
-    if not action_str or not action_str.strip():
-        return 'WATCH'
-    s = action_str.lower()
-    if 'exit' in s or 'reduce' in s:
-        return 'ACT'
-    if 'trim' in s or 'watch' in s:
-        return 'WATCH'
-    if 'hold' in s:
-        return 'HOLD'
-    return 'WATCH'
-
-
-def glance_is_new(etf: str) -> bool:
-    entry = _signal_history.get(etf)
-    if entry is None:
-        return False
-    today     = datetime.now().date()
-    conv_at   = entry.get('conviction_at')
-    action_at = entry.get('action_at')
-    return (
-        (conv_at   is not None and conv_at.date()   == today) or
-        (action_at is not None and action_at.date() == today)
-    )
-
 
 def get_row_tint(rec: str, conviction: str) -> str:
     if rec == 'BUY':
@@ -1343,100 +1318,6 @@ def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
     })
 
 
-def glance_render_band(label: str, items: list[dict]) -> html.Div:
-    if not items:
-        return html.Div()
-    band_color  = {'ACT': RED, 'WATCH': YELLOW, 'HOLD': MUTED}[label]
-    count_label = f"{label} — {len(items)} position{'s' if len(items) != 1 else ''}"
-    header = html.Div(count_label, style={
-        'borderLeft': f'3px solid {band_color}',
-        'paddingLeft': '8px',
-        'color': band_color,
-        'fontWeight': '700',
-        'fontSize': '11px',
-        'letterSpacing': '0.8px',
-        'fontFamily': 'monospace',
-        'marginBottom': '6px',
-        'marginTop': '14px',
-    })
-    row_divs = []
-    for item in items:
-        is_new = item['is_new']
-        ticker_children = [
-            html.Span(item['name'], style={'color': CHART_COLORS.get(item['name'], TEXT), 'fontWeight': '700'}),
-        ]
-        if is_new:
-            ticker_children.append(
-                html.Span(' NEW', style={'color': '#22d3ee', 'fontSize': '9px', 'fontWeight': '700', 'marginLeft': '4px'})
-            )
-        glance_chg       = item.get('chg_pct')
-        glance_chg_color = GREEN if (glance_chg or 0) > 0 else (RED if (glance_chg or 0) < 0 else MUTED)
-        glance_chg_str   = f"{'+' if (glance_chg or 0) >= 0 else ''}{glance_chg:.2f}%" if glance_chg is not None else '—'
-        price_str = f"{item['price']:.2f}" if item.get('price') else '—'
-        rsi       = item.get('rsi')
-        if rsi is not None:
-            rsi_color = RED if rsi > 80 or rsi < 30 else (YELLOW if rsi > 70 or rsi < 50 else GREEN)
-            rsi_str   = f"{rsi:.0f}"
-        else:
-            rsi_color, rsi_str = MUTED, '—'
-        row_divs.append(html.Div([
-            html.Div(ticker_children,                                   style={'width': '64px',  'flexShrink': '0'}),
-            html.Div([
-                html.Span(price_str,            style={'color': TEXT,            'fontWeight': '600'}),
-                html.Span(f' {glance_chg_str}', style={'color': glance_chg_color, 'fontSize': '10px'}),
-            ],                                                          style={'width': '100px', 'flexShrink': '0'}),
-            html.Div([
-                html.Span(item.get('conviction', '—'), style={'color': CONVICTION_COLOR.get(item.get('conviction'), MUTED), 'fontWeight': '700', 'fontSize': '10px'}),
-                html.Span('·',                         style={'color': MUTED, 'margin': '0 3px'}),
-                html.Span(item.get('rec', '—'),        style={'color': REC_COLOR.get(item.get('rec'), MUTED), 'fontSize': '10px'}),
-            ],                                                          style={'width': '110px', 'flexShrink': '0'}),
-            html.Div(rsi_str,                                           style={'width': '40px',  'flexShrink': '0', 'color': rsi_color, 'fontWeight': '600'}),
-            html.Div(item.get('note') or '',                            style={'flex': '1', 'color': MUTED, 'fontSize': '11px', 'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap'}),
-        ], style={
-            'display': 'flex', 'alignItems': 'center', 'gap': '8px',
-            'padding': '6px 8px', 'marginBottom': '2px',
-            'borderLeft': '3px solid #22d3ee' if is_new else '3px solid transparent',
-            'opacity': '1' if is_new else '0.4',
-            'fontFamily': 'monospace', 'fontSize': '12px',
-        }))
-    return html.Div([header] + row_divs)
-
-
-def build_glance_tab() -> html.Div:
-    if not _daily_cache:
-        return html.Div('Loading…', style={
-            'color': MUTED, 'textAlign': 'center', 'marginTop': '40px', 'fontFamily': 'monospace',
-        })
-    glance_act, glance_watch, glance_hold = [], [], []
-    for name in ETFS:
-        proxy = WTAI_VOL_PROXY if name == 'WTAI' else None
-        data  = fetch_latest(TICKERS[name], vol_proxy=proxy)
-        if data is None:
-            continue
-        action_str = get_action_text(data['rec'], data['conviction'])
-        band       = glance_classify(action_str)
-        item = {
-            'name':       name,
-            'price':      data['close'],
-            'chg_pct':    data['chg_pct'],
-            'conviction': data['conviction'],
-            'rec':        data['rec'],
-            'rsi':        data['rsi'],
-            'note':       action_str,
-            'is_new':     glance_is_new(name),
-        }
-        if band == 'ACT':
-            glance_act.append(item)
-        elif band == 'WATCH':
-            glance_watch.append(item)
-        else:
-            glance_hold.append(item)
-    return html.Div([
-        glance_render_band('ACT',   glance_act),
-        glance_render_band('WATCH', glance_watch),
-        glance_render_band('HOLD',  glance_hold),
-    ], style={'padding': '16px'})
-
 
 def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: str = 'daypct') -> html.Table:
     if sort_mode == 'rs':
@@ -2120,8 +2001,6 @@ app.layout = html.Div([
         dcc.Tabs(
             id='main-tabs', value='signal-summary',
             children=[
-                dcc.Tab(label='Glance',          value='glance',
-                        style=TAB_STYLE, selected_style=TAB_SELECTED),
                 dcc.Tab(label='Signal Summary', value='signal-summary',
                         style=TAB_STYLE, selected_style=TAB_SELECTED),
                 dcc.Tab(label='Charts',          value='charts',
