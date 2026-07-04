@@ -1476,10 +1476,24 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                 entry_val   = f'{data["sma50"]:.2f}'
                 entry_sub   = 'watch SMA50'
                 entry_color = MUTED
+            entry_watch_pct50 = data.get('pct50')
+            entry_watch_rsi_chg = data.get('rsi_change')
+            entry_watch_el = []
+            if entry_watch_pct50 is not None and entry_watch_rsi_chg is not None:
+                if abs(entry_watch_pct50) <= 3.0 and abs(entry_watch_rsi_chg) < 2.0:
+                    entry_watch_el = [html.Div('⊙ ENTRY WATCH', style={
+                        'color': GREEN,
+                        'fontSize': '10px',
+                        'marginTop': '2px',
+                        'padding': '1px 6px',
+                        'border': f'1px solid {GREEN}',
+                        'borderRadius': '10px',
+                        'display': 'inline-block',
+                    })]
             entry_cell = html.Td([
                 html.Div(entry_val, style={'color': entry_color, 'fontWeight': '700', 'fontSize': '13px'}),
                 html.Div(entry_sub, style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ], style=TD_STYLE)
+            ] + entry_watch_el, style=TD_STYLE)
 
             # RSI 14 cell
             rsi_val       = data['rsi']

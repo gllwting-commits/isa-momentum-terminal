@@ -2,7 +2,7 @@
 
 **Live:** https://isa-momentum-terminal.onrender.com  
 **Repo:** https://github.com/gllwting-commits/isa-momentum-terminal  
-**Version:** v1.18.0
+**Version:** v1.19.0
 
 A professional portfolio intelligence dashboard for a UK Stocks & Shares ISA with a maximum growth, early retirement mandate. Built in Python/Dash, deployed on Render free tier.
 

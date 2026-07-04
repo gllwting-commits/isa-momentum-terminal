@@ -64,6 +64,7 @@ Each column's colour/arrow variables must use a unique prefix:
   RSI delta:   rsi_color, rsi_arrow
   RS Trend:    rs_color, rs_arrow
   52W DD:      dd_color, dd_arrow
+  Entry Watch: entry_watch_
 
 ### FETCH ARCHITECTURE
 fetch_intraday(ticker): runs every 60s during market hours

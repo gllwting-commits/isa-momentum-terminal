@@ -429,10 +429,29 @@ BUILT: Radar pin feature — pin any watchlist ticker to Charts tab for comparis
   NOT TOUCHED: CHART_COLORS, ETFS, WATCHLIST lists, fetch_daily(), fetch_intraday(),
     fetch_radar_ticker(), build_summary_table(), all Signal Summary callbacks.
 
+### 2026-07-04 — v1.19.0 Entry Watch badge
+BUILT: "⊙ ENTRY WATCH" badge in ENTRY AT cell (build_summary_table() only).
+  Shown when BOTH: abs(pct50) <= 3.0 AND abs(rsi_change) < 2.0.
+  Keys confirmed before writing (no guessing): 'pct50' — rows builder
+  line 601, sourced from (close - sma50) / sma50 * 100 at line 568/272.
+  'rsi_change' — rows builder line 601, sourced from
+  rsi_s.iloc[-1] - rsi_s.iloc[-11] at fetch_daily() line 395.
+  No recomputation, no new fetch — both values read via data.get().
+  Guard: either value None → badge skipped silently.
+  Style: small pill, green border, 10px, below existing Entry At text.
+  Variable prefix: entry_watch_.
+  VERIFIED (browser, live layout, 2026-07-04): all 7 portfolio rows
+  checked — no ETF currently meets both conditions, no badge shown
+  (correct), rest of table unchanged.
+NOT TOUCHED: fetch_daily, fetch_intraday, rows builder / pct50 computation,
+  RSI delta computation, all other cells/columns, all callbacks,
+  GBp conversion, RS logic, macro strip.
+
 ## CURRENT STATE
-Version: v1.18.0
+Version: v1.19.0
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
-  (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT, RSI 14,
+  (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
+  (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
   SMA POSITION (+ % from SMA50 third line), 52W DRAWDOWN,
   RS TREND 30d (+ persist Nd + flip count + β rate sensitivity).
 Tabs: Signal Summary · Charts · ISA & Retirement · Radar.
