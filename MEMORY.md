@@ -476,9 +476,9 @@ Radar tab: 10 watchlist ETFs, RSI crossover + RS vs SWDA + 52W DD signal logic.
 2. T8 News & Catalysts tab — DEFERRED until Anthropic API credit
    is configured on Render.
 
-3. SGLS Position Review — URGENT
-   -21.6% drawdown while gold at USD ATH.
-   Decision needed: keep SGLS hedged or switch to IGLN.L unhedged.
+3. SGLS Position Review — RESOLVED 2026-07-04 — hold hedged; DXY-98 switch trigger retired;
+   review only on sustained GBP weakening. RSI recovered to 45.4,
+   delta +9.0 at resolution.
 
 4. Signal Audit Log — HIGH PRIORITY
    In-memory age stamps live. Full log: persistent JSON, old→new
