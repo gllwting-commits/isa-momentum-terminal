@@ -478,8 +478,26 @@ NOT TOUCHED: fetch_macro_regime() US10Y/VIX/DXY scoring logic, regime
   badge, fetch_daily, fetch_intraday, _get_daily_df, build_summary_table,
   all ETF table columns, GBp conversion, RS/radar logic, all callbacks.
 
+### 2026-07-04 — v1.20.1 JEDG removed from dashboard
+REMOVED: JEDG fully deleted — ETFS list, ETF_NAMES, RS_BENCHMARKS
+  (JEDG: UFO div pair), VOLUME_ETFS, CHART_COLORS (#ef4444 entry),
+  ETF_WEIGHTS (dangling 6.10 entry, not part of original request but
+  cleaned up on request since it was orphaned dead data after the
+  ETFS removal). Portfolio is now 6 ETFs: SEMG, SEMI, VDPG, WTAI,
+  SGLS, FLXK.
+FALLBACKS: both chart default fallback lists — previously
+  ['SEMG', 'WTAI', 'JEDG'] (set 2026-05-30 when IWMO was removed) —
+  changed to ['SEMG', 'WTAI']. Single-ticker fallback
+  (dcc.Store(id='selected-etf')) changed 'JEDG' → 'SEMG'.
+VERIFIED: py_compile clean, grep confirms zero remaining 'JEDG'
+  references in app.py, dev server started with no traceback tied
+  to the removal (pre-existing unrelated Yahoo Finance transient
+  fetch errors on VDPG/FLXK seen in log, not caused by this change).
+NOT TOUCHED: fetch_daily, fetch_intraday, _get_daily_df, GBp
+  conversion, radar tab, macro strip, any other ticker's config.
+
 ## CURRENT STATE
-Version: v1.20.0
+Version: v1.20.1
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
   (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
@@ -491,8 +509,8 @@ Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y (level
   Fetch failure shows N/A in grey. SOX also shows a red "SOX < 200d" tag
   when last close is below its 200-day SMA (display only, not scored;
   absent whenever above the SMA — no muted/placeholder state).
-Portfolio: JEDG, SEMG, SEMI, VDPG, WTAI, SGLS, FLXK.
-  IWMO removed 2026-05-30. SEMI.L added 2026-05-30.
+Portfolio: SEMG, SEMI, VDPG, WTAI, SGLS, FLXK.
+  IWMO removed 2026-05-30. SEMI.L added 2026-05-30. JEDG removed 2026-07-04.
 Charts tab: Price / RSI 14 / Volume modes. Timeframes 1W–1Y.
   Snapshot stat lanes below chart. Timeframe toggle 1D–1Y.
   Pinned radar tickers shown in #a78bfa purple across all modes + snapshot.

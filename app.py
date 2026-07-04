@@ -14,10 +14,9 @@ from dash import ALL, Input, Output, State, dcc, html
 from plotly.subplots import make_subplots
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ETFS = ['JEDG', 'SEMG', 'SEMI', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
+ETFS = ['SEMG', 'SEMI', 'VDPG', 'WTAI', 'SGLS', 'FLXK']
 TICKERS = {e: f'{e}.L' for e in ETFS}
 ETF_NAMES = {
-    'JEDG': 'VanEck Space Innovators UCITS ETF',
     'SEMG': 'Amundi MSCI Semiconductors ESG Screened UCITS ETF',
     'SEMI': 'iShares MSCI Global Semiconductors UCITS ETF',
     'VDPG': 'Vanguard FTSE Dev Asia Pac ex-JP',
@@ -39,11 +38,11 @@ WATCHLIST_NAMES = {
     'RBTX': 'Robotics Alt',       'EMQQ': 'Emerging Markets',
     'NDIA': 'India',              'HEAL': 'Healthcare',
 }
-VOLUME_ETFS    = ['JEDG', 'VDPG', 'SEMG', 'SEMI', 'FLXK']
+VOLUME_ETFS    = ['VDPG', 'SEMG', 'SEMI', 'FLXK']
 WTAI_VOL_PROXY = 'AIAG.L'
 ETF_WEIGHTS    = {
     'SEMG': 51.39, 'WTAI': 15.02, 'VDPG': 11.41,
-    'SGLS': 10.80, 'JEDG':  6.10, 'FLXK':  5.28, 'SEMI': 0.0,
+    'SGLS': 10.80, 'FLXK':  5.28, 'SEMI': 0.0,
 }
 # RS ratio pairs: etf → (benchmark_ticker, fx)
 # fx='div': bench is USD, ETF is GBP → bench_gbp = bench_usd / GBPUSD
@@ -52,7 +51,6 @@ RS_BENCHMARKS = {
     'SEMG': ('SOXX',   'div'),
     'SEMI': ('SOXX',   'div'),
     'WTAI': ('EQQQ.L', 'mul'),
-    'JEDG': ('UFO',    'div'),
     'SGLS': ('IGLN.L', 'div'),
     'VDPG': ('VAPX.L', None),
     'FLXK': ('EWY',    None),
@@ -130,7 +128,7 @@ ORANGE   = '#f97316'
 DIM      = SLATE_THEME['dim']
 
 CHART_COLORS = {
-    'JEDG': '#ef4444', 'SEMG': '#22d3ee', 'SEMI': '#6366f1', 'VDPG': '#84cc16',
+    'SEMG': '#22d3ee', 'SEMI': '#6366f1', 'VDPG': '#84cc16',
     'WTAI': '#facc15', 'SGLS': '#f59e0b', 'FLXK': '#e879f9',
     'SPX':  '#94a3b8', 'NDQ':  '#f97316',
 }
@@ -2081,12 +2079,12 @@ app.layout = html.Div([
              style={'maxWidth': '1100px', 'margin': '0 auto', 'padding': '0 16px 40px'}),
 
     # ── Stores & intervals ────────────────────────────────────────────────────
-    dcc.Store(id='selected-etf',  data='JEDG'),
+    dcc.Store(id='selected-etf',  data='SEMG'),
     dcc.Store(id='selected-tf',   data='1M'),
     dcc.Store(id='price-period',  data='today'),
     dcc.Store(id='summary-view',  data='table'),
     dcc.Store(id='sort-mode',     data='daypct'),
-    dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI', 'JEDG']),
+    dcc.Store(id='chart-tickers', data=['SEMG', 'WTAI']),
     dcc.Store(id='chart-mode',    data='price'),
     dcc.Store(id='snapshot-tf',   data='1d'),
     dcc.Store(id='radar-pinned',  data=[]),
@@ -2233,7 +2231,7 @@ def render_tab(tab, pin_pinned, sel_etf, sel_tf, price_period, chart_tickers, ch
         ])
 
     if tab == 'charts':
-        active_tickers  = set(chart_tickers or ['SEMG', 'WTAI', 'JEDG'])
+        active_tickers  = set(chart_tickers or ['SEMG', 'WTAI'])
         mode            = chart_mode or 'price'
         rsi_mode        = mode == 'rsi'
         return html.Div([
@@ -2557,7 +2555,7 @@ def style_chart_mode_buttons(mode):
 def update_price_chart(tickers, tf, _, mode, pin_pinned):
     bars    = TF_BARS.get(tf or '1M', 21)
     now     = datetime.now().strftime('%H:%M:%S')
-    active  = list(tickers or ['SEMG', 'WTAI', 'JEDG'])
+    active  = list(tickers or ['SEMG', 'WTAI'])
     mode    = mode or 'price'
 
     # ── RSI mode ──────────────────────────────────────────────────────────────
@@ -2807,7 +2805,7 @@ def toggle_chart_ticker(_, current_tickers, mode):
     ticker    = json.loads(triggered.split('.')[0])['index']
     if (mode or 'price') == 'rsi' and ticker in ('SPX', 'NDQ'):
         return current_tickers
-    tickers = list(current_tickers or ['SEMG', 'WTAI', 'JEDG'])
+    tickers = list(current_tickers or ['SEMG', 'WTAI'])
     if ticker in tickers:
         if len(tickers) > 1:
             tickers.remove(ticker)
@@ -2821,7 +2819,7 @@ def toggle_chart_ticker(_, current_tickers, mode):
     [Input('chart-tickers', 'data'), Input('chart-mode', 'data')],
 )
 def style_chart_ticker_buttons(tickers, mode):
-    selected  = set(tickers or ['SEMG', 'WTAI', 'JEDG'])
+    selected  = set(tickers or ['SEMG', 'WTAI'])
     rsi_mode  = (mode or 'price') == 'rsi'
     return [_chart_ticker_btn_style(t, t in selected,
                                     greyed=(rsi_mode and t in ('SPX', 'NDQ')))
@@ -2858,7 +2856,7 @@ def style_snapshot_tf_buttons(snap_tf):
      Input('refresh', 'n_intervals'), Input('radar-pinned', 'data')],
 )
 def update_chart_snapshot(tickers, snap_tf, _, pin_pinned):
-    active  = [t for t in (tickers or ['SEMG', 'WTAI', 'JEDG']) if t not in ('SPX', 'NDQ')]
+    active  = [t for t in (tickers or ['SEMG', 'WTAI']) if t not in ('SPX', 'NDQ')]
     snap_tf = snap_tf or '1d'
     bars    = SNAP_TF_BARS[snap_tf]
 

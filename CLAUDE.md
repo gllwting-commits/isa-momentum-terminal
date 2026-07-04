@@ -26,7 +26,7 @@ Tickers reporting in PENCE (divide by 100 at fetch, once only):
   SEMG.L, SGLS.L, EQQQ.L, SWDA.L
 
 Tickers reporting in GBP pounds (no conversion):
-  JEDG.L, VDPG.L, VAPX.L, SEMI.L
+  VDPG.L, VAPX.L, SEMI.L
 
 Tickers reporting in USD (no conversion):
   WTAI.L, FLXK.L
@@ -39,7 +39,6 @@ Do not convert again anywhere else.
 SEMG: SOXX    (div)  — USD bench ÷ GBPUSD → GBP
 SEMI: SOXX    (div)  — USD bench ÷ GBPUSD → GBP
 WTAI: EQQQ.L  (mul)  — GBP bench × GBPUSD → USD
-JEDG: UFO     (div)  — USD bench ÷ GBPUSD → GBP
 SGLS: IGLN.L  (div)  — USD bench ÷ GBPUSD → GBP
 VDPG: VAPX.L  (None) — both GBP, straight division
 FLXK: EWY     (None) — both USD, straight division
@@ -110,11 +109,10 @@ fast_info.previous_close is unreliable across bank holidays.
 ### CHARTS TAB
 Three chart modes: Price (normalised), RSI 14, Volume.
 Ticker colour palette (fixed — do not reassign):
-  JEDG  #ef4444  solid     SEMG  #22d3ee  solid
-  SEMI  #6366f1  dashed    VDPG  #84cc16  solid
-  WTAI  #facc15  dashed    SGLS  #f59e0b  solid
-  FLXK  #e879f9  solid     SPX   #94a3b8  solid
-  NDQ   #f97316  dashed
+  SEMG  #22d3ee  solid     SEMI  #6366f1  dashed
+  VDPG  #84cc16  solid     WTAI  #facc15  dashed
+  SGLS  #f59e0b  solid     FLXK  #e879f9  solid
+  SPX   #94a3b8  solid     NDQ   #f97316  dashed
 Benchmarks: SPX (^GSPC), NDQ (^IXIC) via fetch_benchmark_price().
 Timeframe bar counts (all sliced from daily cache):
   1W=5, 1M=21, 3M=63, 6M=126, 1Y=252
