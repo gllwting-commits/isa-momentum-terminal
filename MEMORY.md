@@ -447,8 +447,39 @@ NOT TOUCHED: fetch_daily, fetch_intraday, rows builder / pct50 computation,
   RSI delta computation, all other cells/columns, all callbacks,
   GBp conversion, RS logic, macro strip.
 
+### 2026-07-04 — v1.20.0 SOX 200d SMA breach tag
+BUILT: _sox_1y_cache (24h TTL) + _get_sox_1y() — ^SOX primary, SOXX fallback,
+  .squeeze() on Close, <200 rows → None, whole body wrapped in try/except
+  returning None. Breach computed entirely within the single 1y series
+  (last close vs 200d SMA), never assembled from two different fetches.
+  One additive call block + one additive 'sox_ma_breach' key in
+  fetch_macro_regime(). One extraction line + one conditional red
+  "SOX < 200d" Span in build_macro_strip(), next to the existing SOX span —
+  renders nothing (None) when above the SMA or when the fetch fails.
+  Variable prefix: sox_ma_.
+ACCEPTED EDGE CASE: the existing 3mo display fetch and the new 1y tag fetch
+  resolve ^SOX → SOXX independently. A rare double-failover window could
+  show the display price and the breach tag referencing different
+  instruments. The tag itself is always internally consistent (computed
+  from one series). This is option (a) from the original brainstorm —
+  documented and accepted, not coded around with a cross-function
+  ticker-match check.
+VERIFIED: browser, 4-step sequence — (1) no regression, no tag under
+  current above-200d conditions; (2) comparison forced to > → tag rendered
+  correctly next to SOX value; (3) reverted to < → tag absent again;
+  (4) both primary and fallback tickers pointed at invalid symbols →
+  _get_sox_1y() returned None, strip degraded cleanly, no crash. Final
+  grep confirmed '^SOX', 'SOXX', and < all restored before commit.
+LESSON: _sox_1y_cache is 24h TTL and in-memory — a code change to the
+  comparison or tickers does not take effect until the server restarts
+  (cache survives the edit). Caused one stale read during verification;
+  restarting the process each time fixed it.
+NOT TOUCHED: fetch_macro_regime() US10Y/VIX/DXY scoring logic, regime
+  badge, fetch_daily, fetch_intraday, _get_daily_df, build_summary_table,
+  all ETF table columns, GBp conversion, RS/radar logic, all callbacks.
+
 ## CURRENT STATE
-Version: v1.19.0
+Version: v1.20.0
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
   (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
@@ -457,7 +488,9 @@ Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
 Tabs: Signal Summary · Charts · ISA & Retirement · Radar.
 Macro strip: RISK ON/LEANING ON/RISK OFF/CAUTION badge + US10Y (level
   + 10d delta), VIX, DXY, SOX. SOX display only — not scored.
-  Fetch failure shows N/A in grey.
+  Fetch failure shows N/A in grey. SOX also shows a red "SOX < 200d" tag
+  when last close is below its 200-day SMA (display only, not scored;
+  absent whenever above the SMA — no muted/placeholder state).
 Portfolio: JEDG, SEMG, SEMI, VDPG, WTAI, SGLS, FLXK.
   IWMO removed 2026-05-30. SEMI.L added 2026-05-30.
 Charts tab: Price / RSI 14 / Volume modes. Timeframes 1W–1Y.

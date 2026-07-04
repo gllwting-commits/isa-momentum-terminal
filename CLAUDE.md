@@ -79,6 +79,21 @@ fetch_daily(ticker): runs ONCE at startup, cached until midnight
   - RSI and SMA MUST stay on daily data. Intraday RSI is noise.
   - Do NOT move any of these calculations to intraday fetch.
 
+_get_sox_1y() / _sox_1y_cache: 24h TTL, separate cache dict (same pattern
+  as _get_tnx_1y() / _tnx_1y_cache).
+  - ^SOX primary, SOXX fallback — same fallback order as the macro strip's
+    existing 3mo SOX display fetch, but resolved independently (own fetch,
+    own cache). The two can diverge on ticker in a rare double-failover
+    window — accepted edge case, not coded around.
+  - Breach (last close vs 200d SMA) computed entirely within this single
+    1y series — never assembled by comparing against the 3mo display price.
+  - Feeds one additive 'sox_ma_breach' key into fetch_macro_regime()'s
+    result. Display only — not scored into the regime.
+  - Renders as a red "SOX < 200d" tag in build_macro_strip(), next to the
+    existing SOX value. Shows nothing when above the SMA or on fetch
+    failure — no muted/placeholder state.
+  - Variable prefix sox_ma_ is reserved for this feature.
+
 ### GBPUSD
 _get_gbpusd() caches the rate for 5 minutes.
 Do not re-fetch per row or per ticker. Cache is intentional.

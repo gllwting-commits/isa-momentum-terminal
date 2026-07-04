@@ -606,6 +606,7 @@ def fetch_latest(ticker: str, vol_proxy: str | None = None) -> dict | None:
 
 _macro_cache: dict = {}
 _tnx_1y_cache: dict = {}
+_sox_1y_cache: dict = {}
 
 
 def _get_tnx_1y() -> 'pd.Series | None':
@@ -622,6 +623,41 @@ def _get_tnx_1y() -> 'pd.Series | None':
         s.index = pd.to_datetime(s.index).normalize()
         _tnx_1y_cache['data'] = {'ts': now, 'series': s}
         return s
+    except Exception:
+        return None
+
+
+def _get_sox_1y() -> 'dict | None':
+    """^SOX 1Y daily closes for 200d SMA breach check. ^SOX primary, SOXX fallback. Cached 24h."""
+    now    = datetime.now()
+    cached = _sox_1y_cache.get('data')
+    if cached and (now - cached['ts']).total_seconds() < 86400:
+        return cached['result']
+
+    def _fetch_sox_1y(ticker):
+        try:
+            df = yf.download(ticker, period='1y', interval='1d', progress=False, auto_adjust=True)
+            if df.empty:
+                return None
+            return df
+        except Exception:
+            return None
+
+    try:
+        df = _fetch_sox_1y('^SOX')
+        if df is None:
+            df = _fetch_sox_1y('SOXX')
+        if df is None or 'Close' not in df.columns:
+            return None
+        sox_ma_close = df['Close'].squeeze().dropna()
+        if len(sox_ma_close) < 200:
+            return None
+        sox_ma_last    = float(sox_ma_close.iloc[-1])
+        sox_ma_200     = float(sox_ma_close.rolling(200).mean().iloc[-1])
+        sox_ma_breach  = sox_ma_last < sox_ma_200
+        result = {'sox_ma_last': sox_ma_last, 'sox_ma_200': sox_ma_200, 'sox_ma_breach': sox_ma_breach}
+        _sox_1y_cache['data'] = {'ts': now, 'result': result}
+        return result
     except Exception:
         return None
 
@@ -769,6 +805,10 @@ def fetch_macro_regime() -> dict:
         macro_sox_df = _fetch('SOXX')
     macro_sox_val, macro_sox_dir = _dir(macro_sox_df)
 
+    # SOX 200d SMA breach: display only — not scored for regime
+    sox_ma_data = _get_sox_1y()
+    macro_sox_ma_breach = sox_ma_data['sox_ma_breach'] if sox_ma_data else None
+
     # Score only inputs that returned data; partial if < 3
     macro_inputs_scored = 0
     macro_score         = 0
@@ -805,6 +845,7 @@ def fetch_macro_regime() -> dict:
         'sox':         macro_sox_val,
         'sox_dir':     macro_sox_dir,
         'us10y_delta': macro_us10y_delta,
+        'sox_ma_breach': macro_sox_ma_breach,
     }
     _macro_cache['data'] = {'ts': now, 'result': macro_result}
     return macro_result
@@ -820,6 +861,7 @@ def build_macro_strip(macro_data: dict) -> html.Div:
     macro_dxy_dir     = macro_data.get('dxy_dir', '→')
     macro_sox         = macro_data.get('sox')
     macro_sox_dir     = macro_data.get('sox_dir', '→')
+    macro_sox_ma_breach = macro_data.get('sox_ma_breach')
     macro_us10y_delta = macro_data.get('us10y_delta')
 
     if macro_us10y_delta is None:
@@ -892,6 +934,12 @@ def build_macro_strip(macro_data: dict) -> html.Div:
             macro_val_span('DXY:', macro_dxy, '{:.1f}', macro_dxy_dir),
             html.Span('·', style={'color': MUTED, 'marginRight': '10px'}),
             macro_val_span('SOX:', macro_sox, '{:.0f}', macro_sox_dir),
+            (html.Span('SOX < 200d', style={
+                'background': RED, 'color': BG, 'fontWeight': '800',
+                'fontSize': '9px', 'padding': '2px 6px', 'borderRadius': '10px',
+                'marginLeft': '-6px', 'marginRight': '10px', 'letterSpacing': '0.4px',
+                'whiteSpace': 'nowrap',
+            }) if macro_sox_ma_breach else None),
         ], style={
             'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap',
             'gap': '4px', 'fontSize': '12px',
