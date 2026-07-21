@@ -497,7 +497,15 @@ NOT TOUCHED: fetch_daily, fetch_intraday, _get_daily_df, GBp
   conversion, radar tab, macro strip, any other ticker's config.
 
 ## CURRENT STATE
-Version: v1.20.1
+Version: v1.21.0
+RS-TILT rebuild: Feature A done — rs_vs_swda(ticker, lookback=31) common RS
+  metric, app.py (inserted after fetch_radar_ticker). RS vs SWDA.L (iShares
+  MSCI World), fixed 31-trading-day iloc[-31] offset (radar's convention,
+  now standardised across all 15 RS-TILT names: 5 holdings ex-SGLS +
+  10 radar). Resolves the holdings-vs-radar RS mismatch — all 15 now on one
+  comparable scale, verified by print table (see 2026-07-21 session log).
+  Not yet wired into any UI. B (allocation engine), C (display panel),
+  D (retire ENTRY AT/ACTION) remain — not started.
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
   (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
@@ -520,7 +528,63 @@ Radar tab: 10 watchlist ETFs, RSI crossover + RS vs SWDA + 52W DD signal logic.
   ＋ Charts pin button on any pin_worthy row (any one condition met).
   Pinned state persists within session, resets on page refresh.
 
+### 2026-07-21 — RS-TILT rebuild, Feature A: common RS metric ✓ VERIFIED
+CONTEXT: RS-TILT is a 4-part rebuild (A/B/C/D, per handoff isa-rs-tilt-
+  handoff-v2.md) that stops the ENTRY AT/ACTION columns from gating new-money
+  DCA entries (get_signal's rsi<45 & close<sma50 → BUY is mean-reversion,
+  contradicts the "always deploy, momentum only tilts the split" mandate)
+  and replaces them with a monthly winner-take-most allocation across 15
+  ranked names. Feature A is step 1 of 4 — plan approved, B/C/D not started.
+BUILT: rs_vs_swda(ticker, lookback=31) — new function, app.py, inserted
+  directly after fetch_radar_ticker(). Generalises that function's existing
+  inline RS-vs-SWDA.L block (fixed iloc[-31] trading-day offset convention)
+  into a reusable function callable for any ticker. Takes the full yfinance
+  string (e.g. 'SEMG.L', 'AIAI.L'), not a short name. Returns None on any
+  missing/insufficient data or fetch failure — same contract as every other
+  fetch_* function in the file.
+  Resolves the holdings-vs-radar RS mismatch: holdings' RS TREND
+  (fetch_rs_ratio/persist/flips) used a calendar-cutoff convention
+  (today−30d), radar used a fixed trading-day offset (iloc[-31]) — the two
+  were not comparable on one scale. rs_vs_swda standardises on radar's
+  convention for all 15 RS-TILT names.
+  No new cache: _get_daily_df('SWDA.L') already caches per calendar day
+  (existing _daily_cache), so calling it from rs_vs_swda for all 15 names
+  hits cache after the first call — no new fetch, no new cache dict needed.
+  CLAUDE.md updated: new "RS-TILT RANKING BASIS" note under BENCHMARK PAIRS
+  (added 2026-07-21) — makes explicit the per-sector pairs (SOXX/EQQQ.L/
+  IGLN.L/VAPX.L/EWY) are unchanged and still feed RS TREND display only;
+  rs_vs_swda is a separate, additive ranking metric, not a repurposing of
+  the "DO NOT CHANGE WITHOUT ASKING" pairs.
+VERIFIED: pure-logic script (import app, no server side effects — app.run()
+  is guarded), printed rs_vs_swda for all 15 names (5 holdings ex-SGLS:
+  SEMG/SEMI/VDPG/WTAI/FLXK + 10 radar). All 15 returned a value, none N/A:
+  SEMG -1.46% · SEMI -2.81% · VDPG -4.66% · WTAI -4.85% · FLXK -10.42% ·
+  AIAI +0.08% · ISPY +11.69% · INRG -12.20% · NUKZ -5.91% · NATO +0.42% ·
+  ROBO -6.35% · RBTX -1.90% · EMQQ +6.47% · NDIA +2.29% · HEAL +5.50%.
+  Values plausible and on one comparable scale regardless of former
+  holdings-vs-radar split. py_compile clean. git diff scoped to exactly
+  app.py (+27 lines, 0 deletions) and CLAUDE.md (+13 lines, 0 deletions).
+NOT TOUCHED: fetch_rs_ratio, fetch_rs_persist, fetch_rs_flips, RS_BENCHMARKS
+  (all still feed RS TREND display, calendar-cutoff convention, unchanged),
+  fetch_radar_ticker (inline RS block left as-is, not refactored to call the
+  new function — that would be a separate cleanup, not part of Feature A),
+  get_signal, get_conviction, get_recommendation, entry_watch_ badge,
+  build_summary_table, build_radar_table, all callbacks. rs_vs_swda is
+  defined but not wired into any UI yet — zero visible/behavioural change
+  on the live dashboard.
+UNCERTAINTY/FOLLOW-UP: none for Feature A itself — plan matched
+  implementation exactly, verification passed clean on first run.
+  Next: Feature B (allocation engine) needs a plan session before any code —
+  not started. Handoff's open sub-decisions for B (all-negative-RS month
+  handling, keep RS TREND display alongside SWDA ranking — recommended yes,
+  confirm £1,667/mo default) are still open and belong to B's plan stage.
+
 ## REMAINING BUILD ITEMS
+0. RS-TILT rebuild — IN PROGRESS. Feature A (common RS metric) done and
+   verified 2026-07-21, see session log above. B (allocation engine),
+   C (display panel), D (retire ENTRY AT/ACTION) not started — plan each
+   one at a time per /superpower, do not batch.
+
 1. SOX verify — cross-check SOX value against TradingView at Monday
    market open. Confirm arrow direction matches trend.
 

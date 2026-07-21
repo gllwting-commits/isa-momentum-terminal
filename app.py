@@ -740,6 +740,33 @@ def fetch_radar_ticker(ticker_str: str) -> 'dict | None':
         return None
 
 
+def rs_vs_swda(ticker: str, lookback: int = 31) -> float | None:
+    """30d RS vs SWDA.L (iShares MSCI World), fixed trading-day offset — radar's
+    convention, standardised here for use across all 15 RS-TILT names (5 holdings
+    ex-SGLS + 10 radar). `ticker` is the full yfinance string (e.g. 'SEMG.L',
+    'AIAI.L'), not a short name. Returns None on any missing/insufficient data.
+    """
+    try:
+        df      = _get_daily_df(ticker)
+        swda_df = _get_daily_df('SWDA.L')
+        if df is None or df.empty or swda_df is None or swda_df.empty:
+            return None
+        etf_close        = df['Close'].dropna().squeeze()
+        swda_close       = swda_df['Close'].dropna().squeeze()
+        etf_close.index  = pd.to_datetime(etf_close.index).normalize()
+        swda_close.index = pd.to_datetime(swda_close.index).normalize()
+        merged = pd.merge(
+            etf_close.rename('etf'), swda_close.rename('swda'),
+            left_index=True, right_index=True, how='inner',
+        )
+        if len(merged) < lookback + 1:
+            return None
+        ratio = merged['etf'] / merged['swda']
+        return float((ratio.iloc[-1] / ratio.iloc[-lookback] - 1) * 100)
+    except Exception:
+        return None
+
+
 def fetch_macro_regime() -> dict:
     """Fetch US10Y (^TNX/TLT fallback), VIX, DXY (UUP) and return composite risk regime. Cached 60 minutes."""
     now = datetime.now()

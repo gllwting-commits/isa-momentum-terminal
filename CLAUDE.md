@@ -43,6 +43,19 @@ SGLS: IGLN.L  (div)  — USD bench ÷ GBPUSD → GBP
 VDPG: VAPX.L  (None) — both GBP, straight division
 FLXK: EWY     (None) — both USD, straight division
 
+### RS-TILT RANKING BASIS (added 2026-07-21)
+The RS-TILT allocation engine ranks all 15 tracked names (5 holdings
+  ex-SGLS: SEMG/SEMI/WTAI/VDPG/FLXK, + 10 radar names) on one common
+  metric: rs_vs_swda(ticker, lookback=31) — RS vs SWDA.L (iShares MSCI
+  World), fixed 31-trading-day offset (radar's existing convention).
+The per-sector pairs above are UNCHANGED and continue to feed the RS
+  TREND 30d display only (fetch_rs_ratio/fetch_rs_persist/fetch_rs_flips,
+  calendar-cutoff convention). They are not used for ranking. This is a
+  new, separate metric added alongside them — not a repurposing of the
+  "DO NOT CHANGE WITHOUT ASKING" pairs above.
+SGLS is excluded from the 15 — held (hedged), zero new cash, per the
+  2026-07-04 SGLS Position Review resolution.
+
 ### RS TREND RULES
 - 30-day normalised percentage change of ratio series
 - Deadband ±1.5% = neutral (amber). Applied to RS TREND only.
