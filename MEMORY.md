@@ -497,7 +497,7 @@ NOT TOUCHED: fetch_daily, fetch_intraday, _get_daily_df, GBp
   conversion, radar tab, macro strip, any other ticker's config.
 
 ## CURRENT STATE
-Version: v1.22.0
+Version: v1.23.0
 RS-TILT rebuild: Feature A done — rs_vs_swda(ticker, lookback=31) common RS
   metric, app.py (inserted after fetch_radar_ticker). RS vs SWDA.L (iShares
   MSCI World), fixed 31-trading-day iloc[-31] offset (radar's convention,
@@ -510,9 +510,19 @@ Feature B done — allocate_tilt(monthly_gbp=3000.0, last_split=None) allocation
   Four status states: ok (>=3 valid) / reduced (1-2 valid, renormalised) /
   fallback (0 valid, last_split echoed back) / unavailable (0 valid, no
   last_split). Full-precision floats, no rounding — display rounding deferred
-  to C. Verified by print table (see 2026-07-21 session log). Not yet wired
-  into any UI. C (display panel), D (retire ENTRY AT/ACTION) remain — not
-  started.
+  to C. Verified by print table (see 2026-07-21 session log).
+Feature C done — "This Month's Allocation" panel, first RS-TILT UI wiring.
+  build_allocation_panel(tilt_result) (app.py, inserted before
+  build_summary_table), new update_allocation_panel callback, new card at the
+  top of the Signal Summary tab (above the existing table, untouched).
+  Calls allocate_tilt(monthly_gbp=TILT_MONTHLY_GBP, last_split=None) — new
+  TILT_MONTHLY_GBP=3000.0 constant, separate from MONTHLY_INVEST. Whole-pound
+  display rounding via largest-remainder in build_allocation_panel (not in
+  allocate_tilt). All four statuses render distinct messages (Live/Reduced/
+  Stale/Unavailable). last_split=None always — fallback can't fire yet
+  (needs persistence, deferred); unavailable covers total outage today.
+  Verified live in browser, all four states screenshotted (see 2026-07-21
+  session log). D (retire ENTRY AT/ACTION) remains — not started.
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
   (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
@@ -640,10 +650,69 @@ UNCERTAINTY/FOLLOW-UP: none for Feature B itself — plan matched
   run. Next: Feature C (display panel) needs its own plan session before any
   code — not started.
 
+### 2026-07-21 — RS-TILT rebuild, Feature C: "This Month's Allocation" panel ✓ VERIFIED
+BUILT: TILT_MONTHLY_GBP = 3000.0, app.py Config section next to
+  RS_TILT_TOP_WEIGHTS. Separate from MONTHLY_INVEST (ISA/Retirement
+  projection default) — confirmed side-by-side in browser (see below).
+BUILT: build_allocation_panel(tilt_result) -> html.Div, app.py, inserted
+  directly before build_summary_table. Renders header ("This Month's
+  Allocation" + £ total + status label Live/Reduced/Stale/Unavailable),
+  then body by status: ok/reduced/fallback show up to 3 rows (ticker,
+  display name via combined ETF_NAMES/WATCHLIST_NAMES lookup, £, weight %,
+  RS %); reduced adds a "fewer than 3 valid names" note; fallback adds a
+  "may be stale" warning; unavailable shows an empty-state message, no rows.
+  Whole-pound rounding via _tilt_whole_pounds() — largest-remainder method,
+  floor each £ amount then distribute the rounding deficit to the rows with
+  the largest remainders, so displayed amounts always sum to exactly
+  round(monthly_gbp). Computed in the display layer only — allocate_tilt's
+  full-precision floats untouched.
+  Variable prefix: tilt_.
+BUILT: update_allocation_panel callback (own section, next to the existing
+  Signal Summary callback) — Output('allocation-panel','children'),
+  Input('main-tabs','value') + Input('refresh','n_intervals') (same 60s
+  interval as the table, no new dcc.Interval). Calls
+  allocate_tilt(monthly_gbp=TILT_MONTHLY_GBP, last_split=None).
+BUILT: layout insertion in render_tab()'s signal-summary branch — one new
+  card(dcc.Loading(html.Div(id='allocation-panel'))) as the first child,
+  above the existing Signal Summary card (untouched).
+last_split=None always in C — persistence is a separate deferred item
+  (Signal Audit Log). Consequence: a real outage today renders
+  'unavailable', not 'fallback' — fallback's message is built and verified
+  now so it's ready once persistence lands and passes a real last_split in.
+VERIFIED: live browser, dev server (python app.py, killed/restarted between
+  each stub state since debug=False has no reloader) —
+  (1) real allocate_tilt(): panel shows £3,000 · Live, ISPY/HEAL/EMQQ at
+      £1,800/£900/£300 (60/30/10), summing to exactly £3,000; existing
+      Signal Summary table + Charts + Radar + ISA & Retirement tabs all
+      still render unbroken (ISA & Retirement's £1,667/month figure
+      unchanged, confirming no conflation with TILT_MONTHLY_GBP);
+  (2) temporarily hardcoded synthetic tilt_result dicts inside
+      update_allocation_panel (bypassing the real allocate_tilt call) to
+      force each remaining state in turn, screenshotted, then restarted the
+      server — reduced (2 rows, £2,000/£1,000 at 66.7%/33.3%, note
+      rendered), fallback (3 echoed rows, "may be stale" warning rendered),
+      unavailable (empty-state message, no rows);
+  (3) reverted the stub, restarted, confirmed the real 'ok' path renders
+      correctly again;
+  (4) git diff grepped for the stub marker post-revert — 0 occurrences;
+  py_compile clean; git diff scoped to exactly app.py (+76 lines, 0
+  deletions).
+NOT TOUCHED: allocate_tilt, rs_vs_swda, RS_TILT_POOL, RS_TILT_TOP_WEIGHTS (A/B
+  frozen, no signature/behaviour changes); get_signal, get_conviction,
+  get_recommendation, _ACTION_TEXT; fetch_rs_ratio/fetch_rs_persist/
+  fetch_rs_flips/RS_BENCHMARKS; build_summary_table, build_radar_table
+  (D retires ENTRY AT later, not now); update_signal_summary (existing
+  callback body/signature unchanged); macro strip; all other tabs/callbacks.
+UNCERTAINTY/FOLLOW-UP: none for Feature C itself — plan matched
+  implementation exactly, verification passed clean. Next: Feature D
+  (retire ENTRY AT/ACTION) needs its own plan session before any code —
+  not started. Persisting last_split (Signal Audit Log) remains a separate
+  deferred item, not part of D.
+
 ## REMAINING BUILD ITEMS
-0. RS-TILT rebuild — IN PROGRESS. Feature A (common RS metric) and Feature B
-   (allocation engine) done and verified 2026-07-21, see session logs above.
-   C (display panel), D (retire ENTRY AT/ACTION) not started — plan each
+0. RS-TILT rebuild — IN PROGRESS. Features A (common RS metric), B
+   (allocation engine), and C (display panel) done and verified 2026-07-21,
+   see session logs above. D (retire ENTRY AT/ACTION) not started — plan each
    one at a time per /superpower, do not batch.
 
 1. SOX verify — cross-check SOX value against TradingView at Monday

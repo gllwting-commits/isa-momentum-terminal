@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import socket
 from datetime import datetime, timedelta, time as dt_time
@@ -58,6 +59,7 @@ RS_BENCHMARKS = {
 # RS-TILT allocation pool (Feature B): 5 holdings ex-SGLS + 10 radar, 15 names total.
 RS_TILT_POOL = ['SEMG', 'SEMI', 'VDPG', 'WTAI', 'FLXK'] + WATCHLIST
 RS_TILT_TOP_WEIGHTS = [0.60, 0.30, 0.10]
+TILT_MONTHLY_GBP = 3000.0  # Feature C display default — separate from MONTHLY_INVEST
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
 TF_BARS       = {'1W': 5, '1M': 21, '3M': 63, '6M': 126, '1Y': 252}
 SNAP_TF_BARS  = {'1d': 1, '1w': 5, '1m': 21, '3m': 63, '6m': 126, '1y': 252}
@@ -1454,6 +1456,67 @@ def _make_sparkline(closes: pd.Series, color: str) -> html.Div:
 
 
 
+# ── RS-TILT allocation panel ─────────────────────────────────────────────────
+_TILT_STATUS_LABEL = {
+    'ok': 'Live', 'reduced': 'Reduced', 'fallback': 'Stale', 'unavailable': 'Unavailable',
+}
+_TILT_NAME_MAP = {**ETF_NAMES, **WATCHLIST_NAMES}
+
+
+def _tilt_whole_pounds(allocations: list[dict], monthly_gbp: float) -> list[int]:
+    """Largest-remainder rounding to whole pounds — displayed amounts always sum
+    to round(monthly_gbp), never off by a pound from float rounding."""
+    tilt_bases = [math.floor(a['gbp']) for a in allocations]
+    tilt_remainders = [a['gbp'] - b for a, b in zip(allocations, tilt_bases)]
+    tilt_target = round(monthly_gbp)
+    tilt_deficit = tilt_target - sum(tilt_bases)
+    tilt_order = sorted(range(len(allocations)), key=lambda i: tilt_remainders[i], reverse=True)
+    for i in tilt_order[:tilt_deficit]:
+        tilt_bases[i] += 1
+    return tilt_bases
+
+
+def build_allocation_panel(tilt_result: dict) -> html.Div:
+    tilt_status  = tilt_result['status']
+    tilt_label   = _TILT_STATUS_LABEL[tilt_status]
+    tilt_pounds  = _tilt_whole_pounds(tilt_result['allocations'], tilt_result['monthly_gbp']) if tilt_result['allocations'] else []
+
+    header = html.Div([
+        html.H3('This Month\'s Allocation', style={
+            'color': TEXT, 'margin': '0', 'fontSize': '14px', 'fontWeight': '700',
+        }),
+        html.Span(f"£{tilt_result['monthly_gbp']:,.0f} · {tilt_label}", style={
+            'color': MUTED, 'fontSize': '12px',
+        }),
+    ], style={'display': 'flex', 'justifyContent': 'space-between',
+              'alignItems': 'center', 'marginBottom': '10px'})
+
+    note = None
+    if tilt_status == 'reduced':
+        note = 'fewer than 3 valid names this month; cash concentrated in the leaders.'
+    elif tilt_status == 'fallback':
+        note = "live data unavailable — showing last month's allocation, may be stale."
+    note_el = html.P(note, style={'color': AMBER, 'fontSize': '11px', 'margin': '0 0 10px 0'}) if note else None
+
+    if tilt_status == 'unavailable' or not tilt_result['allocations']:
+        body = html.P('allocation unavailable — data could not be loaded.',
+                       style={'color': MUTED, 'fontSize': '12px', 'margin': '0'})
+        return html.Div([header, body])
+
+    rows = []
+    for a, gbp_whole in zip(tilt_result['allocations'], tilt_pounds):
+        rows.append(html.Div([
+            html.Span(a['name'], style={'color': TEXT, 'fontWeight': '700', 'width': '60px', 'display': 'inline-block'}),
+            html.Span(_TILT_NAME_MAP.get(a['name'], ''), style={'color': MUTED, 'width': '220px', 'display': 'inline-block'}),
+            html.Span(f"£{gbp_whole:,}", style={'color': GREEN, 'width': '90px', 'display': 'inline-block'}),
+            html.Span(f"{a['weight']*100:.1f}%", style={'color': TEXT, 'width': '70px', 'display': 'inline-block'}),
+            html.Span(f"RS {a['rs']:+.2f}%", style={'color': MUTED, 'width': '90px', 'display': 'inline-block'}),
+        ], style={'fontFamily': 'monospace', 'fontSize': '12px', 'padding': '4px 0',
+                   'borderBottom': f'1px solid {BORDER}'}))
+
+    return html.Div([header] + ([note_el] if note_el else []) + rows)
+
+
 def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: str = 'daypct') -> html.Table:
     if sort_mode == 'rs':
         rows = sorted(rows, key=lambda r: (r['data']['rs_ratio'] if r.get('data') and r['data'].get('rs_ratio') is not None else -999.0), reverse=True)
@@ -2271,6 +2334,7 @@ def render_tab(tab, pin_pinned, sel_etf, sel_tf, price_period, chart_tickers, ch
     if tab == 'signal-summary':
         period = price_period or 'today'
         return html.Div([
+            card(dcc.Loading(html.Div(id='allocation-panel')), {'padding': '16px 20px'}),
             card([
                 html.Div([
                     html.Div([
@@ -2442,6 +2506,18 @@ def toggle_price_period(n_today, n_week):
 def style_toggle_buttons(period):
     p = period or 'today'
     return toggle_btn_style('today', p), {**toggle_btn_style('week', p), 'marginLeft': '4px'}
+
+
+# ── Allocation panel callback ────────────────────────────────────────────────
+@app.callback(
+    Output('allocation-panel', 'children'),
+    [Input('main-tabs', 'value'), Input('refresh', 'n_intervals')],
+)
+def update_allocation_panel(tab, _):
+    if tab != 'signal-summary':
+        return dash.no_update
+    tilt_result = allocate_tilt(monthly_gbp=TILT_MONTHLY_GBP, last_split=None)
+    return build_allocation_panel(tilt_result)
 
 
 # ── Signal Summary callback ───────────────────────────────────────────────────

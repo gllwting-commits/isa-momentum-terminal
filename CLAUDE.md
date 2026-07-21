@@ -72,6 +72,24 @@ Four status states in the return dict, always present, mutually exclusive:
   always deploy, momentum sizes not gates). £ amounts are full-precision
   floats, not rounded — display rounding is Feature C's concern.
 
+### RS-TILT DISPLAY PANEL (added 2026-07-21, Feature C — DECIDED)
+"This Month's Allocation" card — build_allocation_panel(tilt_result),
+  app.py, inserted before build_summary_table. Own callback
+  (update_allocation_panel), own card at the top of the Signal Summary tab,
+  above the existing table. Calls allocate_tilt(monthly_gbp=
+  TILT_MONTHLY_GBP, last_split=None) — TILT_MONTHLY_GBP=3000.0 is a new
+  constant, still separate from MONTHLY_INVEST.
+Whole-pound rounding (largest-remainder method) happens here, in the
+  display layer only — allocate_tilt's return stays full-precision floats,
+  never rounded inside the engine. Do not push rounding back into B.
+Four statuses render four distinct messages (Live/Reduced/Stale/
+  Unavailable) — do not collapse fallback and unavailable into one message,
+  they mean different things (prior split echoed vs nothing to show).
+last_split is always None here — persistence (Signal Audit Log) is a
+  separate, not-yet-built item. fallback cannot fire live yet; its message
+  is built and verified anyway so it renders correctly once persistence
+  lands and starts passing a real last_split in.
+
 ### RS TREND RULES
 - 30-day normalised percentage change of ratio series
 - Deadband ±1.5% = neutral (amber). Applied to RS TREND only.
