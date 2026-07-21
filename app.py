@@ -55,6 +55,9 @@ RS_BENCHMARKS = {
     'VDPG': ('VAPX.L', None),
     'FLXK': ('EWY',    None),
 }
+# RS-TILT allocation pool (Feature B): 5 holdings ex-SGLS + 10 radar, 15 names total.
+RS_TILT_POOL = ['SEMG', 'SEMI', 'VDPG', 'WTAI', 'FLXK'] + WATCHLIST
+RS_TILT_TOP_WEIGHTS = [0.60, 0.30, 0.10]
 TIMEFRAMES = {'1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365}
 TF_BARS       = {'1W': 5, '1M': 21, '3M': 63, '6M': 126, '1Y': 252}
 SNAP_TF_BARS  = {'1d': 1, '1w': 5, '1m': 21, '3m': 63, '6m': 126, '1y': 252}
@@ -765,6 +768,65 @@ def rs_vs_swda(ticker: str, lookback: int = 31) -> float | None:
         return float((ratio.iloc[-1] / ratio.iloc[-lookback] - 1) * 100)
     except Exception:
         return None
+
+
+def allocate_tilt(monthly_gbp: float = 3000.0, last_split: 'dict | None' = None) -> dict:
+    """RS-TILT allocation engine (Feature B). Ranks RS_TILT_POOL (15 names) on
+    rs_vs_swda and splits monthly_gbp winner-take-most across the top 3 (60/30/10).
+    Pure function, no UI. Always deploys — least-bad top 3 still funded in an
+    all-negative-RS month. status is one of:
+      'ok'          - >=3 valid names, standard 60/30/10 split
+      'reduced'     - 1-2 valid names, weights renormalised to sum to 1.0
+      'fallback'    - 0 valid names, last_split echoed back unchanged
+      'unavailable' - 0 valid names and no last_split to fall back to
+    """
+    tilt_ticker_map = {**TICKERS, **WATCHLIST_TICKERS}
+
+    tilt_ranked, tilt_excluded = [], []
+    for tilt_name in RS_TILT_POOL:
+        tilt_rs = rs_vs_swda(tilt_ticker_map[tilt_name])
+        if tilt_rs is None:
+            tilt_excluded.append(tilt_name)
+        else:
+            tilt_ranked.append((tilt_name, tilt_rs))
+    tilt_ranked.sort(key=lambda p: (-p[1], p[0]))
+
+    tilt_ranked_all = [
+        {'ticker': tilt_ticker_map[n], 'name': n, 'rs': rs} for n, rs in tilt_ranked
+    ]
+
+    if not tilt_ranked:
+        if last_split is not None:
+            return {**last_split, 'status': 'fallback'}
+        return {
+            'status': 'unavailable', 'monthly_gbp': monthly_gbp,
+            'allocations': [], 'ranked_all': [], 'excluded': list(RS_TILT_POOL),
+        }
+
+    tilt_top    = tilt_ranked[:3]
+    tilt_status = 'ok' if len(tilt_top) >= 3 else 'reduced'
+    tilt_weights_raw = RS_TILT_TOP_WEIGHTS[:len(tilt_top)]
+    tilt_weight_sum  = sum(tilt_weights_raw)
+    tilt_weights = [w / tilt_weight_sum for w in tilt_weights_raw]
+
+    tilt_allocations = [
+        {
+            'ticker': tilt_ticker_map[tilt_name],
+            'name': tilt_name,
+            'rs': tilt_rs,
+            'weight': tilt_weight,
+            'gbp': monthly_gbp * tilt_weight,
+        }
+        for (tilt_name, tilt_rs), tilt_weight in zip(tilt_top, tilt_weights)
+    ]
+
+    return {
+        'status': tilt_status,
+        'monthly_gbp': monthly_gbp,
+        'allocations': tilt_allocations,
+        'ranked_all': tilt_ranked_all,
+        'excluded': tilt_excluded,
+    }
 
 
 def fetch_macro_regime() -> dict:

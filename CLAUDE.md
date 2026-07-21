@@ -56,6 +56,22 @@ The per-sector pairs above are UNCHANGED and continue to feed the RS
 SGLS is excluded from the 15 — held (hedged), zero new cash, per the
   2026-07-04 SGLS Position Review resolution.
 
+### RS-TILT ALLOCATION ENGINE (added 2026-07-21, Feature B — DECIDED)
+allocate_tilt(monthly_gbp=3000.0, last_split=None) -> dict, app.py, inserted
+  after rs_vs_swda. Pure function, no UI wiring yet.
+Pool: RS_TILT_POOL (the 15 names above). Weights: RS_TILT_TOP_WEIGHTS =
+  [0.60, 0.30, 0.10], winner-take-most across the top 3 by rs_vs_swda.
+£3,000/month default is a separate, configurable parameter — NOT
+  MONTHLY_INVEST (=1,667), which is the unrelated ISA & Retirement
+  growth-projection default. Do not conflate or reuse one for the other.
+Four status states in the return dict, always present, mutually exclusive:
+  'ok' (>=3 valid names) / 'reduced' (1-2 valid, weights renormalised to
+  sum to 1.0) / 'fallback' (0 valid, last_split echoed back) /
+  'unavailable' (0 valid, no last_split). All-negative-RS month is not a
+  branch — least-bad top 3 still funds naturally via the sort (mandate:
+  always deploy, momentum sizes not gates). £ amounts are full-precision
+  floats, not rounded — display rounding is Feature C's concern.
+
 ### RS TREND RULES
 - 30-day normalised percentage change of ratio series
 - Deadband ±1.5% = neutral (amber). Applied to RS TREND only.

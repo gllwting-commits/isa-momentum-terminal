@@ -497,15 +497,22 @@ NOT TOUCHED: fetch_daily, fetch_intraday, _get_daily_df, GBp
   conversion, radar tab, macro strip, any other ticker's config.
 
 ## CURRENT STATE
-Version: v1.21.0
+Version: v1.22.0
 RS-TILT rebuild: Feature A done — rs_vs_swda(ticker, lookback=31) common RS
   metric, app.py (inserted after fetch_radar_ticker). RS vs SWDA.L (iShares
   MSCI World), fixed 31-trading-day iloc[-31] offset (radar's convention,
   now standardised across all 15 RS-TILT names: 5 holdings ex-SGLS +
   10 radar). Resolves the holdings-vs-radar RS mismatch — all 15 now on one
   comparable scale, verified by print table (see 2026-07-21 session log).
-  Not yet wired into any UI. B (allocation engine), C (display panel),
-  D (retire ENTRY AT/ACTION) remain — not started.
+Feature B done — allocate_tilt(monthly_gbp=3000.0, last_split=None) allocation
+  engine, app.py (inserted after rs_vs_swda). Ranks RS_TILT_POOL (15 names,
+  SGLS excluded) on rs_vs_swda, splits monthly_gbp across top 3 at 60/30/10.
+  Four status states: ok (>=3 valid) / reduced (1-2 valid, renormalised) /
+  fallback (0 valid, last_split echoed back) / unavailable (0 valid, no
+  last_split). Full-precision floats, no rounding — display rounding deferred
+  to C. Verified by print table (see 2026-07-21 session log). Not yet wired
+  into any UI. C (display panel), D (retire ENTRY AT/ACTION) remain — not
+  started.
 Dashboard columns: ETF (+ sparkline), PRICE/Day%, VOLUME, CONVICTION
   (+ grey age stamp), ACTION (+ grey age stamp), ENTRY AT
   (+ ⊙ ENTRY WATCH badge when near SMA50 + RSI flattening), RSI 14,
@@ -579,9 +586,63 @@ UNCERTAINTY/FOLLOW-UP: none for Feature A itself — plan matched
   handling, keep RS TREND display alongside SWDA ranking — recommended yes,
   confirm £1,667/mo default) are still open and belong to B's plan stage.
 
+### 2026-07-21 — RS-TILT rebuild, Feature B: allocate_tilt allocation engine ✓ VERIFIED
+BUILT: RS_TILT_POOL (15 names, SGLS excluded: SEMG/SEMI/VDPG/WTAI/FLXK + 10
+  radar) and RS_TILT_TOP_WEIGHTS ([0.60, 0.30, 0.10]) constants, app.py Config
+  section near RS_BENCHMARKS.
+BUILT: allocate_tilt(monthly_gbp=3000.0, last_split=None) -> dict, app.py
+  (inserted directly after rs_vs_swda). Resolves each pool name's full ticker
+  via existing TICKERS/WATCHLIST_TICKERS dicts (no new ticker map), calls
+  rs_vs_swda per name (Feature A, unchanged, no new fetch/cache), sorts
+  descending by rs with alphabetical tiebreak, takes top 3.
+  £3,000/month default is a new, separate parameter — NOT the same as
+  MONTHLY_INVEST (=1,667, app.py:64), which feeds the unrelated ISA &
+  Retirement growth-projection tab. Do not conflate the two.
+  Four status states, all distinct in the return contract:
+    'ok'          — >=3 valid names, weights = 0.60/0.30/0.10 as-is
+    'reduced'     — 1-2 valid names, weights renormalised to sum to 1.0
+                    (2 names -> ~66.7%/33.3%, 1 name -> 100%)
+    'fallback'    — 0 valid names, last_split supplied -> echoed back
+                    unchanged with status overwritten to 'fallback'
+    'unavailable' — 0 valid names, last_split=None -> empty allocations,
+                    no exception (consistent with other fetch_* functions)
+  All-negative-RS month: no special branch — least-bad top 3 falls out of
+  the sort naturally, still funded (mandate: always deploy).
+  £ amounts are full-precision floats, no rounding in the engine — weights
+  sum to exactly 1.0 by construction so £ amounts sum to monthly_gbp (up to
+  float epsilon). 2dp display rounding deferred to Feature C / UI.
+  Return also includes ranked_all (all valid pool names, sorted) and
+  excluded (names where rs_vs_swda returned None) so callers/verification
+  don't need to re-derive the ranking.
+  Variable prefix: tilt_.
+VERIFIED: pure-logic script (import app, app.run() guarded) —
+  (1) all 15 ranked, none excluded on the day tested: ISPY +8.87% top,
+      INRG -11.70% bottom;
+  (2) top 3 (ISPY/HEAL/EMQQ) at 60/30/10 summed to exactly £3,000.00,
+      status='ok';
+  (3) monkeypatched rs_vs_swda to synthetic 2-name and 1-name cases —
+      renormalised to 66.7%/33.3% and 100%, both summed exactly to £3,000,
+      status='reduced' in both;
+  (4) monkeypatched rs_vs_swda to always return None — with a synthetic
+      last_split, echoed back as status='fallback'; with last_split=None,
+      empty allocations, status='unavailable'.
+  py_compile clean. git diff scoped to exactly app.py (+62 lines, 0
+  deletions) — no other file touched by the code change.
+NOT TOUCHED: get_signal, get_conviction, get_recommendation, _ACTION_TEXT,
+  fetch_rs_ratio/fetch_rs_persist/fetch_rs_flips, RS_BENCHMARKS,
+  fetch_radar_ticker, build_summary_table, build_radar_table, MONTHLY_INVEST
+  and the ISA/Retirement projection tab, all callbacks. No UI wiring —
+  allocate_tilt is defined but not called from anywhere in the app yet.
+UNCERTAINTY/FOLLOW-UP: none for Feature B itself — plan matched
+  implementation exactly (including the two edge-case confirmations made at
+  plan stage: full-precision floats not forced-rounded, and the
+  fallback/unavailable status split), verification passed clean on first
+  run. Next: Feature C (display panel) needs its own plan session before any
+  code — not started.
+
 ## REMAINING BUILD ITEMS
-0. RS-TILT rebuild — IN PROGRESS. Feature A (common RS metric) done and
-   verified 2026-07-21, see session log above. B (allocation engine),
+0. RS-TILT rebuild — IN PROGRESS. Feature A (common RS metric) and Feature B
+   (allocation engine) done and verified 2026-07-21, see session logs above.
    C (display panel), D (retire ENTRY AT/ACTION) not started — plan each
    one at a time per /superpower, do not batch.
 
