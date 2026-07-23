@@ -1535,8 +1535,6 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
         'PRICE / ' + period_label,
         'VOLUME',
         'CONVICTION',
-        'ACTION',
-        'ENTRY AT',
         'RSI 14',
         'SMA POSITION',
         '52W DRAWDOWN',
@@ -1557,7 +1555,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                     html.Div(etf, style={'color': TEXT, 'fontWeight': '700', 'fontSize': '14px'}),
                     html.Div(ETF_NAMES[etf], style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
                 ], style=TD_STYLE),
-                html.Td('No data', colSpan=9, style={**TD_STYLE, 'color': MUTED}),
+                html.Td('No data', colSpan=7, style={**TD_STYLE, 'color': MUTED}),
             ], style={'borderBottom': f'1px solid {BORDER}'})
         else:
             rec        = data['rec']
@@ -1575,7 +1573,6 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                 row_bg     = 'transparent'
                 row_border = '3px solid transparent'
             conv_color = CONVICTION_COLOR[conv]
-            rec_color  = REC_COLOR[rec]
 
             # ETF name cell
             etf_name_children = [
@@ -1647,52 +1644,6 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                 })] if _regime_modifier else []),
             ], style=TD_STYLE)
 
-            # ACTION cell: instruction text on top, grey age stamp below
-            action_cell = html.Td([
-                html.Div(get_action_text(rec, conv), style={
-                    'color': rec_color,
-                    'fontSize': '12px',
-                    'fontWeight': '600',
-                }),
-                html.Div(action_age, style={
-                    'color': MUTED,
-                    'fontSize': '10px',
-                    'marginTop': '4px',
-                }),
-            ], style=TD_STYLE)
-
-            # Entry AT cell
-            if rec == 'BUY':
-                entry_val   = f'{data["sma20"]:.2f}'
-                entry_sub   = 'near SMA20'
-                entry_color = GREEN
-            elif rec == 'SELL':
-                entry_val   = 'Avoid'
-                entry_sub   = 'wait for pullback'
-                entry_color = RED
-            else:
-                entry_val   = f'{data["sma50"]:.2f}'
-                entry_sub   = 'watch SMA50'
-                entry_color = MUTED
-            entry_watch_pct50 = data.get('pct50')
-            entry_watch_rsi_chg = data.get('rsi_change')
-            entry_watch_el = []
-            if entry_watch_pct50 is not None and entry_watch_rsi_chg is not None:
-                if abs(entry_watch_pct50) <= 3.0 and abs(entry_watch_rsi_chg) < 2.0:
-                    entry_watch_el = [html.Div('⊙ ENTRY WATCH', style={
-                        'color': GREEN,
-                        'fontSize': '10px',
-                        'marginTop': '2px',
-                        'padding': '1px 6px',
-                        'border': f'1px solid {GREEN}',
-                        'borderRadius': '10px',
-                        'display': 'inline-block',
-                    })]
-            entry_cell = html.Td([
-                html.Div(entry_val, style={'color': entry_color, 'fontWeight': '700', 'fontSize': '13px'}),
-                html.Div(entry_sub, style={'color': MUTED, 'fontSize': '10px', 'marginTop': '2px'}),
-            ] + entry_watch_el, style=TD_STYLE)
-
             # RSI 14 cell
             rsi_val       = data['rsi']
             rsi_color     = RED if rsi_val > 70 else (GREEN if rsi_val < 30 else TEXT)
@@ -1733,6 +1684,19 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                                  else AMBER if sma_ext_pct >= 2
                                  else MUTED if sma_ext_pct >= 0
                                  else RED)
+            entry_watch_rsi_chg = data.get('rsi_change')
+            entry_watch_el = []
+            if sma_ext_pct is not None and entry_watch_rsi_chg is not None:
+                if abs(sma_ext_pct) <= 3.0 and abs(entry_watch_rsi_chg) < 2.0:
+                    entry_watch_el = [html.Div('⊙ ENTRY WATCH', style={
+                        'color': GREEN,
+                        'fontSize': '10px',
+                        'marginTop': '2px',
+                        'padding': '1px 6px',
+                        'border': f'1px solid {GREEN}',
+                        'borderRadius': '10px',
+                        'display': 'inline-block',
+                    })]
             sma_cell   = html.Td([
                 html.Div([
                     html.Span('20: ', style={'color': MUTED, 'fontSize': '10px'}),
@@ -1746,7 +1710,7 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                 ], style={'marginTop': '3px'}),
                 *([html.Div(sma_ext_text, style={'color': sma_ext_color, 'fontSize': '10px', 'marginTop': '3px'})]
                   if sma_ext_pct is not None else []),
-            ], style=TD_STYLE)
+            ] + entry_watch_el, style=TD_STYLE)
 
             # 52W drawdown cell
             dd = data.get('drawdown')
@@ -1804,8 +1768,6 @@ def build_summary_table(rows: list[dict], show_week: bool = False, sort_mode: st
                 ], style=TD_STYLE),
                 vol_cell,
                 conv_cell,
-                action_cell,
-                entry_cell,
                 rsi_cell,
                 sma_cell,
                 dd_cell,

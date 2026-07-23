@@ -497,8 +497,9 @@ NOT TOUCHED: fetch_daily, fetch_intraday, _get_daily_df, GBp
   conversion, radar tab, macro strip, any other ticker's config.
 
 ## CURRENT STATE
-Version: v1.23.0
-RS-TILT rebuild: Feature A done — rs_vs_swda(ticker, lookback=31) common RS
+Version: v1.24.0
+RS-TILT rebuild: COMPLETE — Features A, B, C, D all done and verified.
+Feature A done — rs_vs_swda(ticker, lookback=31) common RS
   metric, app.py (inserted after fetch_radar_ticker). RS vs SWDA.L (iShares
   MSCI World), fixed 31-trading-day iloc[-31] offset (radar's convention,
   now standardised across all 15 RS-TILT names: 5 holdings ex-SGLS +
@@ -709,11 +710,40 @@ UNCERTAINTY/FOLLOW-UP: none for Feature C itself — plan matched
   not started. Persisting last_split (Signal Audit Log) remains a separate
   deferred item, not part of D.
 
+### 2026-07-23 — RS-TILT rebuild, Feature D: retire ENTRY AT/ACTION ✓ VERIFIED
+BUILT: removed the ACTION and ENTRY AT columns from build_summary_table.
+  headers list: 10 -> 8 (ETF, PRICE/Day%, VOLUME, CONVICTION, RSI 14,
+  SMA POSITION, 52W DRAWDOWN, RS TREND 30d). No-data row colSpan: 9 -> 7.
+  Deleted action_cell and entry_cell blocks and their two <td> slots in the
+  row list. rec_color (only ever consumed by action_cell) deleted with it.
+  rec and conv themselves stay live — still drive row_bg/row_border
+  (action-based left border, unchanged) and conv_cell (unchanged).
+  The ⊙ ENTRY WATCH badge (v1.19.0) was relocated, not deleted — moved into
+  the SMA POSITION cell, reusing sma_ext_pct (same pct50 value the old badge
+  read under a different name) and a fresh data.get('rsi_change') read, same
+  threshold condition (abs(pct)<=3.0 and abs(rsi_change)<2.0) and same badge
+  markup as before, appended via ] + entry_watch_el.
+VERIFIED: browser, single pass — 8 header columns, 8 <td> per row, no
+  count mismatch, ENTRY AT/ACTION gone, ENTRY WATCH badge renders under SMA
+  POSITION (none qualified on the day tested, same as prior verification),
+  allocation panel + Charts/ISA & Retirement/Radar tabs + macro strip
+  unchanged. ast.parse clean.
+NOT TOUCHED: get_signal, get_conviction, get_recommendation, _ACTION_TEXT,
+  get_action_text (still called by build_summary_view and the Charts-tab
+  conviction card — untouched); fetch_latest's rec/conviction computation;
+  rs_vs_swda, allocate_tilt, build_allocation_panel, RS_TILT_POOL,
+  RS_TILT_TOP_WEIGHTS, TILT_MONTHLY_GBP (A/B/C frozen); fetch_rs_ratio/
+  fetch_rs_persist/fetch_rs_flips/RS_BENCHMARKS; build_radar_table; macro
+  strip; all other tabs/callbacks.
+UNCERTAINTY/FOLLOW-UP: none — plan matched implementation, verification
+  passed clean. RS-TILT rebuild (A/B/C/D) is now complete. Persisting
+  last_split (Signal Audit Log, item 4 below) remains separate, not part
+  of D, still not started.
+
 ## REMAINING BUILD ITEMS
-0. RS-TILT rebuild — IN PROGRESS. Features A (common RS metric), B
-   (allocation engine), and C (display panel) done and verified 2026-07-21,
-   see session logs above. D (retire ENTRY AT/ACTION) not started — plan each
-   one at a time per /superpower, do not batch.
+0. RS-TILT rebuild — COMPLETE. Features A (common RS metric), B (allocation
+   engine), C (display panel) verified 2026-07-21; D (retire ENTRY AT/ACTION)
+   verified 2026-07-23. See session logs above.
 
 1. SOX verify — cross-check SOX value against TradingView at Monday
    market open. Confirm arrow direction matches trend.
