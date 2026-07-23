@@ -1,5 +1,6 @@
 # ISA MOMENTUM TERMINAL — CLAUDE.md
 # Read this at the start of every session before writing any code.
+# Doc version: v1.24.0 (2026-07-23) — RS-TILT rebuild complete (A/B/C/D)
 
 ## PROJECT
 Stack: Python · Dash · yfinance · Render · GitHub
@@ -20,6 +21,19 @@ Live: isa-momentum-terminal.onrender.com
 ## PERMANENT ARCHITECTURAL FACTS
 These are decided. Do not re-derive them. Do not suggest alternatives
 unless asked.
+
+### SUMMARY TABLE — ALLOCATION MODEL (v1.24.0)
+The Signal Summary table has 8 columns: ETF, PRICE/Day%, VOLUME, CONVICTION,
+RSI 14, SMA POSITION, 52W DRAWDOWN, RS TREND 30d. The old ENTRY AT / ACTION
+dip-buyer columns were retired in v1.24.0 — they gated new-money entries on
+mean-reversion, contradicting the "upward momentum only" mandate. New money is
+now sized by the monthly RS-TILT allocation engine, not gated.
+ENTRY WATCH badge lives INSIDE the SMA POSITION cell (sma_cell), not a
+standalone column. Fires when abs(sma_ext_pct) <= 3.0 AND abs(rsi_change) < 2.0.
+Relocated from the retired ENTRY AT cell in v1.24.0. Reuses sma_ext_pct.
+RS-TILT engine (FROZEN — do not modify without asking): rs_vs_swda,
+allocate_tilt, RS_TILT_POOL, RS_TILT_TOP_WEIGHTS, build_allocation_panel,
+update_allocation_panel, TILT_MONTHLY_GBP.
 
 ### GBp vs GBP CONVERSION (CRITICAL)
 Tickers reporting in PENCE (divide by 100 at fetch, once only):
